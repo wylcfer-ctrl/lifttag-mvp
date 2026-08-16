@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}LiftTag MVP — Test Harness{% endblock %}
+{% block content %}
+<h1>Test Harness</h1>
+
+<p class="note">This page is a test-only convenience — it is <strong>not</strong> part of the real
+tap flow. In the eventual product, a phone reaches an asset only by physically tapping its NFC tag.
+Here, since no physical tags exist yet, use these links to simulate a tap.</p>
+
+<p class="note">Each link's Tag ID is a random opaque token used only to route to the right asset.
+It is <strong>not</strong> authentication — anyone with a link can open it. This is acceptable only
+because all data below is fictitious and this environment is not for operational use.</p>
+
+<table class="asset-table">
+  <thead>
+    <tr><th>Asset</th><th>Type</th><th>Status</th><th>Simulated tap (open on any phone)</th></tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.asset.asset_id }}</td>
+      <td>{{ row.asset.equipment_type }}</td>
+      <td class="status {{ 'status-quarantined' if 'QUARANTINED' in row.asset.current_status else 'status-inservice' }}">
+        {{ row.asset.current_status }}
+      </td>
+      <td>
+        {% if row.tap_url %}
+          <a href="{{ row.tap_url }}">{{ row.tap_url }}</a>
+        {% else %}
+          (no active tag)
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

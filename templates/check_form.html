@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Pre-Use Check — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('tag_entry', tag_id=tag.tag_id) }}">&larr; {{ asset.asset_id }}</a></p>
+<h1>Pre-Use Check — {{ asset.asset_id }}</h1>
+
+{% if 'QUARANTINED' in asset.current_status %}
+<div class="alert alert-danger">
+  This asset is currently {{ asset.current_status }}. Recording a check here does not release it
+  from quarantine.
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="alert alert-danger">
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post">
+  <label>Checked By
+    <input type="text" name="checked_by" required>
+  </label>
+  <label>Lift Supervisor
+    <input type="text" name="lift_supervisor" required>
+  </label>
+  <fieldset>
+    <legend>Result</legend>
+    <label class="radio"><input type="radio" name="result" value="PASS" required> PASS</label>
+    <label class="radio"><input type="radio" name="result" value="FAIL"> FAIL</label>
+  </fieldset>
+  <button type="submit" class="button">Submit Check</button>
+</form>
+{% endblock %}

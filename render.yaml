@@ -1,0 +1,40 @@
+# Render.com Blueprint for the LiftTag MVP temporary test deployment.
+#
+# This declares a persistent disk explicitly so the SQLite database survives
+# restarts AND redeploys, per the deployment-readiness corrections approved
+# 2026-08-16. It requires the paid "starter" plan — Render's free tier does
+# not support persistent disks (confirmed against Render's own pricing and
+# disks documentation).
+#
+# Seeding is fully automatic: preDeployCommand runs `python seed.py` once
+# per deploy, after the build and before the new version goes live. seed.py
+# is idempotent (see tests/test_persistence.py), so this is safe on every
+# deploy, including the very first one and every restart/redeploy after —
+# no manual shell command is ever required.
+#
+# This file only prepares the deployment. Nothing is deployed by writing it.
+# Deployment happens when a human connects this repo in the Render dashboard
+# (or runs `render blueprint launch`) and explicitly approves it.
+
+services:
+  - type: web
+    name: lifttag-mvp
+    runtime: python
+    plan: starter          # cheapest plan that supports a persistent disk
+    region: oregon          # change to whichever region is closest/preferred
+    buildCommand: "pip install -r requirements.txt"
+    preDeployCommand: "python seed.py"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/lifttag.db
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # BASE_URL is intentionally NOT set here: seed.py automatically falls
+      # back to Render's own RENDER_EXTERNAL_URL (provided for free by
+      # Render on every service), so the printed/seeded tap URLs always
+      # match the real deployed hostname with no manual entry needed.
+    disk:
+      name: lifttag-data
+      mountPath: /var/data
+      sizeGB: 1              # smallest size; £/$ cost is per-GB, see README

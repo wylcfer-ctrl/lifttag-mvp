@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Check Result — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<h1>Check Recorded</h1>
+<p>Result: <strong>{{ check.result }}</strong></p>
+<p>Checked by {{ check.checked_by }}, Lift Supervisor {{ check.lift_supervisor }},
+   {{ check.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+
+{% if 'QUARANTINED' in asset.current_status %}
+  <div class="alert alert-danger">{{ asset.current_status }}</div>
+  {% if check.result == 'PASS' %}
+  <p class="note"><strong>Note:</strong> this check passed, but the asset remains quarantined.
+  A successful pre-use check does not release an asset from quarantine — there is no release
+  workflow in this MVP.</p>
+  {% endif %}
+{% else %}
+  <div class="alert alert-ok">{{ asset.current_status }}</div>
+{% endif %}
+
+<a class="link" href="{{ url_for('tag_entry', tag_id=tag.tag_id) }}">Back to asset</a>
+<a class="link" href="{{ url_for('audit_history', asset_id=asset.asset_id) }}">View Audit History</a>
+{% endblock %}
