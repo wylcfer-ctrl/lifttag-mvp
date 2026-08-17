@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Asset Registry — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_home') }}">&larr; Admin</a></p>
+<h1>Asset Registry</h1>
+<p class="note">Search by Asset ID / Equipment Number or Serial Number. Leave blank to browse
+every registered asset.</p>
+
+<form method="get">
+  <label>Search
+    <input type="text" name="q" value="{{ query }}" placeholder="e.g. SHACKLE-001 or a serial number">
+  </label>
+  <button type="submit" class="button">SEARCH</button>
+</form>
+
+<table class="asset-table">
+  <thead>
+    <tr><th>Asset ID</th><th>Serial</th><th>Type</th><th>Status</th><th>Active Tag</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.asset.asset_id }}</td>
+      <td>{{ row.asset.serial_number or '—' }}</td>
+      <td>{{ row.asset.equipment_type }}</td>
+      <td class="{{ 'status-quarantined' if row.asset.current_status != 'IN SERVICE' else 'status-inservice' }}">{{ row.asset.current_status }}</td>
+      <td>{{ row.active_tag.tag_id if row.active_tag else 'none' }}</td>
+      <td><a class="link" href="{{ url_for('admin_asset_detail', asset_id=row.asset.asset_id) }}">View</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No assets match this search.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

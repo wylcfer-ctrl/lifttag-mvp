@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Tag No Longer Active{% endblock %}
+{% block content %}
+<h1>Tag No Longer Active</h1>
+<div class="alert alert-danger">This Tag ID has been revoked and is no longer the current tag for
+any asset.</div>
+<p class="note">Historical reference only: this tag was previously associated with
+<strong>{{ asset.asset_id }}</strong>. This is <strong>not</strong> that asset's current status —
+do not rely on this page for current equipment status.</p>
+<p class="note">Use the asset's current tag, or the standard fallback process, to check its current
+status.</p>
+{% endblock %}

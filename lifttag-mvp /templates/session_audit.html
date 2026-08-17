@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Audit — {{ session.session_ref }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('session_detail', session_id=session.id) }}">&larr; Inspection {{ session.session_ref }}</a></p>
+<h1>Session Audit Trail — {{ session.session_ref }}</h1>
+<p class="note">Append-only record, merging session-level events (SESSION_CREATED, SESSION_READY,
+SESSION_BLOCKED, SESSION_COMPLETED, ...) with the asset-level events recorded under this session
+(ASSET_ADDED_TO_SESSION, CHECK_PASS, CHECK_FAIL, STATUS_CHANGE, ASSET_REMOVED_FROM_ACTIVE_SESSION).
+Nothing shown here can be edited or deleted from this application.</p>
+
+<table class="audit-table">
+  <thead>
+    <tr><th>Time (UTC)</th><th>Event</th><th>Actor</th><th>Asset</th><th>Previous</th><th>New</th><th>Ref</th></tr>
+  </thead>
+  <tbody>
+  {% for m in merged %}
+    {% if m.kind == 'session' %}
+      <tr>
+        <td>{{ m.row.timestamp[:19].replace('T', ' ') }}</td>
+        <td>{{ m.row.event_type }}</td>
+        <td>{{ m.row.actor }}</td>
+        <td>(session)</td>
+        <td>{{ m.row.previous_status or '' }}</td>
+        <td>{{ m.row.new_status or '' }}</td>
+        <td>{{ m.row.reference or '' }}</td>
+      </tr>
+    {% else %}
+      <tr>
+        <td>{{ m.row.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ m.row.event_type }}</td>
+        <td>{{ m.row.actor }}</td>
+        <td>{{ m.row.asset_id }}</td>
+        <td>{{ m.row.previous_state or '' }}</td>
+        <td>{{ m.row.new_state or '' }}</td>
+        <td>{{ m.row.reference or '' }}</td>
+      </tr>
+    {% endif %}
+  {% else %}
+    <tr><td colspan="7">No audit events recorded yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,13 @@
+# Runtime dependency: Flask only. The data layer uses Python's built-in
+# sqlite3 module, and the test suite uses the built-in unittest module —
+# no ORM or test framework is required to run this app or its tests.
+Flask==3.0.3
+
+# Needed only for deployment (see README "Deployment"), not for local
+# development or for running the tests.
+gunicorn==22.0.0
+
+# Optional: if you have pytest installed locally you can run the test
+# suite with `pytest` instead of `python -m unittest discover -s tests`.
+# Not required — the tests are plain unittest.TestCase and need nothing
+# beyond Flask to run.

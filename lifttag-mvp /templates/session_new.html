@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Start Inspection — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>Start Inspection</h1>
+
+<p class="note">Enter the Lift Supervisor and Slinger / Signaller once for this whole inspection —
+you will not be asked again for each item. The inspection date/time is recorded automatically by
+the server when you submit this form.</p>
+
+{% if errors %}
+<div class="alert alert-danger">
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post">
+  <label>Lift Supervisor
+    <input type="text" name="lift_supervisor" value="{{ form.get('lift_supervisor', '') }}" required autofocus>
+  </label>
+  <label>Slinger / Signaller
+    <input type="text" name="slinger_signaller" value="{{ form.get('slinger_signaller', '') }}" required>
+  </label>
+  <button type="submit" class="button">START INSPECTION</button>
+</form>
+{% endblock %}

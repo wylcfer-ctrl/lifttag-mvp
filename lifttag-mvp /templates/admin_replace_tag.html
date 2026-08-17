@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Replace NFC Tag — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_asset_detail', asset_id=asset.asset_id) }}">&larr; {{ asset.asset_id }}</a></p>
+<h1>Replace NFC Tag — {{ asset.asset_id }}</h1>
+<p class="note">{{ asset.equipment_type }}{% if asset.serial_number %} · Serial {{ asset.serial_number }}{% endif %}</p>
+
+<div class="alert alert-danger">
+  This asset already has an active tag: <strong>{{ existing_active.tag_id }}</strong>. Replacing it
+  will revoke that tag (it becomes historical and fails safe if scanned again) and assign a new one.
+</div>
+
+<p class="note">The Asset ID, serial number, inspection history, quarantine state, and session
+history are <strong>not</strong> affected by a tag replacement — this only changes which physical
+tag currently routes to this asset. If this asset is currently quarantined, replacing its tag will
+<strong>not</strong> release the quarantine.</p>
+
+{% if errors %}
+<div class="alert alert-danger"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form method="post">
+  <label>New Tag ID (optional — leave blank to auto-generate)
+    <input type="text" name="tag_id" value="{{ form.get('tag_id', '') }}">
+  </label>
+  <button type="submit" class="button">CONFIRM REPLACEMENT</button>
+</form>
+{% endblock %}

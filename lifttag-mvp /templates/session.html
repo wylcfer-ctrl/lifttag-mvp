@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ session.session_ref }} — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>Inspection {{ session.session_ref }}</h1>
+
+<dl class="asset-details">
+  <dt>Lift Supervisor</dt><dd>{{ session.lift_supervisor }}</dd>
+  <dt>Slinger / Signaller</dt><dd>{{ session.slinger_signaller }}</dd>
+</dl>
+
+<div class="alert session-status-{{ session.status|lower }}">
+  STATUS: {{ session.status }}
+  {% if session.status == 'BLOCKED' %}
+    <br>{{ attention_count }} ITEM{{ 's' if attention_count != 1 else '' }} REQUIRE{{ '' if attention_count != 1 else 'S' }} ATTENTION
+  {% endif %}
+</div>
+
+{% if complete_error %}
+<div class="alert alert-danger">{{ complete_error }}</div>
+{% endif %}
+
+<h2 id="equipment-top">Equipment — {{ active|length }} ITEM{{ 's' if active|length != 1 else '' }}</h2>
+
+{% if not active %}
+<p class="note">No equipment added yet. Use ADD EQUIPMENT below to simulate tapping the first tag.</p>
+{% endif %}
+
+<ul class="session-item-list">
+{% for row in active %}
+  {% set item = row.item %}
+  {% set asset = row.asset %}
+  <li class="session-item {{ 'session-item-flagged' if item.check_result == 'FAIL' or asset.current_status != 'IN SERVICE' else '' }}">
+    <div class="session-item-head">
+      ✓ <a href="{{ url_for('tag_entry', tag_id=item.tag_id_used) }}">{{ asset.asset_id }}</a> — {{ asset.equipment_type }}
+    </div>
+    <div class="session-item-status">
+      <span class="{{ 'status-quarantined' if asset.current_status != 'IN SERVICE' else 'status-inservice' }}">{{ asset.current_status }}</span>
+      &nbsp;·&nbsp;
+      <span class="check-badge check-badge-{{ item.check_result|lower }}">{{ item.check_result }}</span>
+      {% if asset.periodic_inspection_status != 'VALID' %}
+        &nbsp;·&nbsp;<span class="status-quarantined">Periodic inspection: {{ asset.periodic_inspection_status }}</span>
+      {% endif %}
+    </div>
+    {% if item.check_result == 'FAIL' or asset.current_status != 'IN SERVICE' %}
+    <div class="alert alert-danger" style="margin:6px 0;">
+      {% if item.check_result == 'FAIL' %}This item FAILED its pre-use check.{% else %}This asset is currently {{ asset.current_status }}.{% endif %}
+      This session cannot become READY while it stays active.
+    </div>
+    {% endif %}
+    <div class="session-item-actions">
+      {% if session.status != 'COMPLETED' %}
+        {% if item.check_result == 'PENDING' %}
+          <a class="button" href="{{ url_for('session_item_check', session_id=session.id, item_id=item.id) }}">PASS / FAIL CHECK</a>
+        {% else %}
+          <a class="link" href="{{ url_for('session_item_check', session_id=session.id, item_id=item.id) }}">Re-check</a>
+        {% endif %}
+        <form method="post" action="{{ url_for('session_item_remove', session_id=session.id, item_id=item.id) }}" style="display:inline;">
+          <button type="submit" class="link session-remove-button">REMOVE FROM ACTIVE SESSION</button>
+        </form>
+      {% endif %}
+      <a class="link" href="{{ url_for('audit_history', asset_id=asset.asset_id) }}">Audit</a>
+    </div>
+    {% if just_checked == item.id %}<p class="note">✓ Check recorded just now.</p>{% endif %}
+    {% if just_removed == item.id %}<p class="note">Removed from the active session (history preserved).</p>{% endif %}
+  </li>
+{% endfor %}
+</ul>
+
+{% if removed %}
+<h2>Removed from active session</h2>
+<p class="note">These items remain part of this inspection's history, but are excluded from the
+active count and from readiness. Nothing about them has been deleted.</p>
+<ul class="session-item-list">
+{% for row in removed %}
+  <li class="session-item session-item-removed">
+    {{ row.asset.asset_id }} — {{ row.asset.equipment_type }} — last result: {{ row.item.check_result }}
+    <a class="link" href="{{ url_for('audit_history', asset_id=row.asset.asset_id) }}">Audit</a>
+  </li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if session.status != 'COMPLETED' %}
+<p>
+  <a class="button" href="{{ url_for('session_add_picker', session_id=session.id) }}">ADD EQUIPMENT</a>
+  <a class="link" href="#equipment-top">FINISH ADDING EQUIPMENT ↑</a>
+</p>
+
+<form method="post" action="{{ url_for('session_complete', session_id=session.id) }}">
+  <button type="submit" class="button" {{ 'disabled' if session.status != 'READY' else '' }}>COMPLETE INSPECTION</button>
+</form>
+{% if session.status != 'READY' %}
+<p class="note">COMPLETE INSPECTION becomes available once every active item has PASSed and none is
+quarantined, revoked, or otherwise invalid.</p>
+{% endif %}
+{% else %}
+<div class="alert alert-ok">Inspection completed {{ session.completed_at.strftime('%Y-%m-%d %H:%M UTC') }}. This
+session is now read-only.</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('session_audit', session_id=session.id) }}">View Session Audit Trail</a></p>
+{% endblock %}

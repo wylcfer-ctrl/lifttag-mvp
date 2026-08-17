@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Assign NFC Tag — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_asset_detail', asset_id=asset.asset_id) }}">&larr; {{ asset.asset_id }}</a></p>
+<h1>Assign NFC Tag — {{ asset.asset_id }}</h1>
+<p class="note">{{ asset.equipment_type }}{% if asset.serial_number %} · Serial {{ asset.serial_number }}{% endif %}</p>
+
+<p class="note">Simulates reading a blank NFC tag and writing this asset's commissioning link to
+it. No physical NFC hardware is used yet — leave Tag ID blank to auto-generate one, or enter a
+specific value to simulate reading a particular physical tag.</p>
+
+{% if errors %}
+<div class="alert alert-danger"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form method="post">
+  <label>Tag ID (optional — leave blank to auto-generate)
+    <input type="text" name="tag_id" value="{{ form.get('tag_id', '') }}">
+  </label>
+  <button type="submit" class="button">CONFIRM ASSIGNMENT</button>
+</form>
+{% endblock %}
