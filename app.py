@@ -8,11 +8,23 @@ record -> verify -> audit concept. It is not a production system. See
 README.md for the full list of limitations.
 
 SECURITY NOTE (Correction 2, approved 2026-08-16): the Tag ID in /t/<tag_id>
-is a random, non-sequential, opaque ROUTING token. It is NOT authentication
-or authorisation. Anyone who has a URL can open it. This is acceptable only
-because all data here is fictitious and this environment is explicitly
-labelled as not for operational use. Production authentication/authorisation
-is deferred and is not part of this MVP.
+is an opaque, non-sequential ROUTING token (randomly generated for a normal
+deployment; fixed test-only values on the disposable Render Free demo
+environment — see seed_data.py). It is NOT authentication or authorisation.
+Anyone who has a URL can open it. This is acceptable only because all data
+here is fictitious and this environment is explicitly labelled as not for
+operational use. Production authentication/authorisation is deferred and is
+not part of this MVP.
+
+FREE-TIER STARTUP SEEDING (added 2026-08-16): Render's Free plan has an
+ephemeral filesystem and does not provide the paid persistent disk or
+Pre-Deploy Command this project originally prepared for a paid deployment
+(see docs/decision-log.md and README.md "Free-tier disposable deployment").
+So that the app is usable on Render Free without a manual `python seed.py`
+step, create_app() below idempotently seeds the five fixed demo assets on
+every startup, via seed_data.seed_demo_data(). This never deletes or alters
+an asset, check, audit event, or quarantine status that already exists in
+the current database (see tests/test_startup_seeding.py).
 """
 import os
 
@@ -20,6 +32,7 @@ from flask import Flask, render_template, redirect, url_for, request, abort
 
 import db as dbmod
 from workflow import resolve_tag, record_pre_use_check, UnknownTagError, RevokedTagError
+from seed_data import seed_demo_data
 
 TEST_BANNER = "LiftTag MVP — Test Environment — Fictitious Data Only — Not for Operational Use"
 
@@ -29,6 +42,14 @@ def create_app(database_path=None):
     db_path = database_path or os.environ.get("DATABASE_PATH", "lifttag.db")
     app.config["DATABASE_PATH"] = db_path
     dbmod.init_db(db_path)
+
+    # Idempotent — see seed_data.seed_demo_data docstring. Runs on every
+    # startup so the Test Harness is never empty, without requiring a
+    # manual seeding step or a Pre-Deploy Command (unavailable on Render
+    # Free).
+    _seed_conn = dbmod.get_conn(db_path)
+    seed_demo_data(_seed_conn)
+    _seed_conn.close()
 
     @app.context_processor
     def inject_banner():

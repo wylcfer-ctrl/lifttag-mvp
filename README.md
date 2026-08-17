@@ -28,11 +28,19 @@ its tests — only `Flask` itself. `gunicorn` is listed in `requirements.txt` fo
 
 ## Security note (Correction 2 — approved 2026-08-16)
 
-The Tag ID in each `/t/<tag_id>` URL is a random, non-guessable, non-sequential token, but it is
-**not** authentication or authorisation. Anyone who has a link can open it. This is acceptable only
+The Tag ID in each `/t/<tag_id>` URL is an opaque, non-sequential routing token, but it is **not**
+authentication or authorisation. Anyone who has a link can open it. This is acceptable only
 because: all data is fictitious; this is a controlled demonstrator; and the environment is clearly
 labelled as not for operational use. Production authentication/authorisation is deferred and is not
 part of this MVP.
+
+Two Tag ID schemes exist in this codebase, both equally non-authenticating:
+- `models.new_tag_id()` — a randomly generated token, used when a genuinely new tag is issued
+  (e.g. `workflow.assign_tag`).
+- `seed_data.DEMO_TAG_IDS` — five **fixed, predetermined** `demo-...` tokens used only to seed the
+  five fictitious demo assets, specifically so their simulated tap URLs stay stable across restarts
+  on the ephemeral Render Free environment (see "Free-tier disposable deployment" below). Fixed or
+  random, neither is authentication, and Asset ID and Tag ID remain distinct in both cases.
 
 ## Quarantine logic (Correction 1 — approved 2026-08-16)
 
@@ -69,13 +77,16 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt   # installs Flask (+ gunicorn, for later deployment)
 
-python seed.py                    # creates lifttag.db and the 5 fictitious assets/tags,
-                                   # and prints their simulated NFC tap URLs
-
-python app.py                     # runs at http://localhost:5000
+python app.py                     # runs at http://localhost:5000 — creates lifttag.db and
+                                   # automatically seeds the 5 fictitious assets/tags at startup
 ```
 
-Then either open one of the URLs `seed.py` printed, or visit `http://localhost:5000/` for the
+`python seed.py` still works too (and is handy for printing the five tap URLs directly to your
+terminal without starting the server), but it is no longer required — `python app.py` alone is
+enough, because seeding now happens automatically inside `create_app()` (see "Free-tier disposable
+deployment" below for why).
+
+Then either open one of the printed URLs, or visit `http://localhost:5000/` for the
 **Test Harness** index, which lists all five simulated tap links (clearly labelled as test-only,
 not part of the real tap flow). Open the same link from a second phone/browser at the same time to
 see requirement 8 (another device sees the latest server state) for yourself.
@@ -106,19 +117,79 @@ Test files:
   assets with unique tag URLs.
 - `tests/test_persistence.py` — proves repeated seeding never regenerates an existing Tag ID, never
   duplicates an asset, never touches an existing check or audit event, and never releases a
-  quarantined asset — including when re-seeding happens *after* real check/quarantine activity, the
-  exact scenario that occurs every time `preDeployCommand` re-runs `seed.py` on a redeploy. Also
-  proves a quarantined asset's status, Tag ID, and audit history all survive a simulated application
-  restart (a fresh process against the same on-disk database file).
+  quarantined asset — including when re-seeding happens *after* real check/quarantine activity.
+  Also proves a quarantined asset's status, Tag ID, and audit history all survive a simulated
+  application restart (a fresh process against the same on-disk database file). Written for the
+  originally-prepared paid/persistent architecture; still valid and still run.
+- `tests/test_startup_seeding.py` — proves the automatic startup seeding this app now relies on for
+  Render Free: a completely empty database is seeded just by calling `create_app()`; the root Test
+  Harness shows all five assets with clickable `/t/<tag_id>` links; all five fixed demo tap URLs
+  resolve; repeated startup never duplicates an asset or tag; repeated startup never releases a
+  quarantined asset while the current database still exists; the fixed demo Tag IDs never change
+  across repeated initialisation; and unknown/revoked tag handling still fails safe.
 
-**Verified in this environment:** all 31 tests pass (`Ran 31 tests ... OK`), and the app was also
-smoke-tested by actually running the dev server and curling the full flow (index → active tag →
-FAIL → quarantine banner and labelled status field shown → re-ran `seed.py` and restarted the
-server, same Tag ID still resolved to the same quarantined asset → PASS while quarantined → still
-quarantined with the "does not release" message → audit history in the correct order → unknown/
-revoked tags show the fail-safe pages).
+**Verified in this environment:** all 39 tests pass (`Ran 39 tests ... OK`), and the app was also
+smoke-tested by actually running the dev server (with no prior seeding step) and curling the full
+flow: index showed all five fixed `demo-...` tap links → FAIL on `demo-sling-001` → quarantine
+banner shown → server killed and restarted against the same on-disk file (simulating a Render Free
+restart while the ephemeral filesystem happens to still exist) → same URL still showed
+`QUARANTINED — DO NOT USE`, not re-released → unknown tag still returned the fail-safe 404 page.
+
+## Free-tier disposable deployment (live since 2026-08-16)
+
+**Public URL:** https://lifttag-mvp.onrender.com — deployed on **Render's Free plan**.
+
+This is deliberately **not** the persistent architecture originally prepared (see "Deployment
+readiness" below, which remains accurate as a description of that separate, paid configuration).
+Render Free does not provide a persistent disk or a Pre-Deploy Command, so this deployment uses a
+different, simpler mechanism suited to a disposable demo:
+
+- **Automatic startup seeding.** `create_app()` (in `app.py`) idempotently seeds the five
+  fictitious demo assets every time the application starts — see `seed_data.py`. There is no
+  manual `python seed.py` step and no `preDeployCommand`. This is what keeps the Test Harness from
+  ever being empty on this environment.
+- **Fixed demo Tag IDs**, not random ones. Because the database can be recreated from scratch on a
+  redeploy or a platform-triggered restart of an ephemeral service, a randomly-generated Tag ID
+  would produce a different URL each time — breaking any physical NFC tag already written with the
+  old one. The five demo assets instead always seed to the same predetermined, clearly-labelled
+  test-only tokens (`seed_data.DEMO_TAG_IDS`):
+
+  | Asset ID | Tag ID | Public URL |
+  |---|---|---|
+  | `SLING-001` | `demo-sling-001` | `https://lifttag-mvp.onrender.com/t/demo-sling-001` |
+  | `SLING-002` | `demo-sling-002` | `https://lifttag-mvp.onrender.com/t/demo-sling-002` |
+  | `CHAIN-001` | `demo-chain-001` | `https://lifttag-mvp.onrender.com/t/demo-chain-001` |
+  | `SHACKLE-001` | `demo-shackle-001` | `https://lifttag-mvp.onrender.com/t/demo-shackle-001` |
+  | `BEAM-001` | `demo-beam-001` | `https://lifttag-mvp.onrender.com/t/demo-beam-001` |
+
+  These are ROUTING identifiers only — not authentication, not production Tag IDs — and remain
+  distinct from Asset IDs, exactly as required. See "Security note" above.
+- **Same approved safety-state logic.** The Correction 1 PASS/FAIL/quarantine table below is
+  completely unchanged by any of this — startup seeding never touches `current_status`, `checks`,
+  or `audit_events` for an asset that already exists (see `tests/test_startup_seeding.py`).
+
+### Explicit free-tier warning
+
+- **Render Free storage is ephemeral.** Unlike the paid/persistent configuration below, nothing
+  guarantees the SQLite file survives a restart, redeploy, or platform-triggered filesystem
+  recreation.
+- **Checks and audit history may be reset** whenever that happens — a quarantine recorded during
+  testing may disappear along with the rest of the database, at which point the five demo assets
+  simply reseed as `IN SERVICE` with their same fixed Tag IDs.
+- **This limitation is acceptable only for this disposable MVP** — a demo used to prove the tap →
+  identify → check → record → verify workflow and to test with physical NFC hardware once
+  available. It is explicitly not acceptable for any operational or production use.
+- **Production, offline, and persistence requirements are unchanged** by this free-tier
+  accommodation. Offline-first remains a mandatory production requirement (Product & Safety
+  Requirements) that this MVP does not validate; the persistent/paid architecture documented below
+  remains the correct target whenever real, durable test data is needed again.
 
 ## Deployment readiness (added 2026-08-16)
+
+**Status:** this section describes the paid, persistent configuration that was approved and
+prepared first. It is currently **not the live deployment** (see "Free-tier disposable deployment"
+above) but is kept here, unmodified, as the documented path back to persistent storage — see the
+commented block at the bottom of `render.yaml` for how to restore it.
 
 ### Persistence decision: Option A — SQLite on a genuinely persistent disk
 
@@ -177,7 +248,7 @@ opening a shell or touching a database file by hand:
 You do not need Render's Shell tab, `render ssh`, or any manual database command at any point in
 normal use of this deployment.
 
-### Exact deployment instructions (not yet executed — awaiting approval)
+### Exact deployment instructions for this paid configuration (not currently in use — see status note above)
 
 1. Push this folder (including `render.yaml`) to a new git repository.
 2. In the Render dashboard: **New → Blueprint**, connect that repository. Render reads
@@ -227,6 +298,11 @@ the disk they're stored on doesn't reset, and `seed.py` will not touch them once
 
 ## Limitations (explicit)
 
+- **Currently deployed on Render Free: ephemeral storage.** The live environment
+  (https://lifttag-mvp.onrender.com) may lose its database — including real check/audit history and
+  any quarantine recorded during testing — on restart, redeploy, or platform-triggered filesystem
+  recreation. See "Free-tier disposable deployment" above. This is a disposable-demo accommodation
+  only, not a change to the persistence requirement itself.
 - **Online-only.** No offline mode, no local caching, no sync queue. Every page load re-reads the
   database, which is why a second device sees the latest state — but there is no offline resilience.
   Offline-first remains a mandatory production requirement (Product & Safety Requirements); this MVP

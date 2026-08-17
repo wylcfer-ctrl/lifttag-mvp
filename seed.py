@@ -1,65 +1,43 @@
 """
-LiftTag MVP — seed script.
+LiftTag MVP — standalone seed script (local/manual convenience only).
 
-Creates the database (if not already present) and the five fictitious
-test assets, each with one active Tag ID, then prints the simulated NFC
-tap URLs for each.
+As of 2026-08-16, seeding also happens automatically on every application
+startup (see app.py / seed_data.py) — this is what makes the app usable on
+Render's Free plan, which has no persistent disk and no Pre-Deploy Command.
+This script is kept for local convenience: it lets you seed and print the
+five simulated NFC tap URLs without first starting the dev server, and it
+is still used directly by tests/test_seed.py and tests/test_persistence.py.
+
+Calling seed() below is always safe and idempotent, whether or not the
+five demo assets already exist (e.g. because create_app() already seeded
+them) — see seed_data.seed_demo_data for exactly what that guarantees.
 
 This is fictitious test data only. Do not use real asset names, real
 employee names, or real company data here.
 
-Safe to run any number of times, anywhere in the deployment lifecycle
-(first deploy, every redeploy, every restart): it only ever creates an
-asset/tag the first time it's missing, and never touches an asset's
-current_status, its checks, or its audit events. See
-tests/test_persistence.py for the tests that prove this.
-
 Usage:
     python seed.py
     BASE_URL=https://your-deployed-app.example.com python seed.py
-
-On Render, this runs automatically via `preDeployCommand` in render.yaml
-on every deploy — you do not need to run it by hand. When run there with
-no BASE_URL set, it automatically uses Render's own RENDER_EXTERNAL_URL
-environment variable, so the printed/seeded URLs always match the real
-public hostname.
 """
 import os
 
 import db as dbmod
 from app import create_app
-from workflow import assign_tag
-from models import STATUS_IN_SERVICE
-
-TEST_ASSETS = [
-    ("SLING-001", "Web Sling"),
-    ("SLING-002", "Web Sling"),
-    ("CHAIN-001", "Chain Sling"),
-    ("SHACKLE-001", "Shackle"),
-    ("BEAM-001", "Lifting Beam"),
-]
+from seed_data import seed_demo_data
 
 
 def seed(database_path=None, base_url="http://localhost:5000"):
-    app = create_app(database_path=database_path)
+    app = create_app(database_path=database_path)  # this call already seeds (see app.py)
     db_path = app.config["DATABASE_PATH"]
     conn = dbmod.get_conn(db_path)
 
-    urls = []
-    for asset_id, equipment_type in TEST_ASSETS:
-        asset = dbmod.get_asset(conn, asset_id)
-        if asset is None:
-            dbmod.create_asset(conn, asset_id, equipment_type, "VALID", STATUS_IN_SERVICE)
-            conn.commit()
-            asset = dbmod.get_asset(conn, asset_id)
-
-        tag = dbmod.get_active_tag(conn, asset_id)
-        if tag is None:
-            tag = assign_tag(conn, asset, actor="seed-script")
-
-        urls.append((asset_id, tag.tag_id, f"{base_url.rstrip('/')}/t/{tag.tag_id}"))
-
+    pairs = seed_demo_data(conn)  # idempotent no-op if create_app() already seeded
     conn.close()
+
+    urls = [
+        (asset_id, tag_id, f"{base_url.rstrip('/')}/t/{tag_id}")
+        for asset_id, tag_id in pairs
+    ]
     return urls, app
 
 

@@ -1,40 +1,78 @@
-# Render.com Blueprint for the LiftTag MVP temporary test deployment.
+# Render.com Blueprint for the LiftTag MVP.
 #
-# This declares a persistent disk explicitly so the SQLite database survives
-# restarts AND redeploys, per the deployment-readiness corrections approved
-# 2026-08-16. It requires the paid "starter" plan — Render's free tier does
-# not support persistent disks (confirmed against Render's own pricing and
-# disks documentation).
+# CURRENT DEPLOYMENT (2026-08-16): Render Free plan — disposable test
+# environment only. This is NOT production architecture.
 #
-# Seeding is fully automatic: preDeployCommand runs `python seed.py` once
-# per deploy, after the build and before the new version goes live. seed.py
-# is idempotent (see tests/test_persistence.py), so this is safe on every
-# deploy, including the very first one and every restart/redeploy after —
-# no manual shell command is ever required.
+# Render's Free plan has an ephemeral filesystem: it does not offer a
+# persistent disk, and does not run `preDeployCommand` the way a paid plan
+# does. This blueprint reflects that reality —
+#   - no `disk:` block;
+#   - no `preDeployCommand`;
+#   - `plan: free`.
+# The SQLite database (path below) is created fresh in the service's own
+# ephemeral filesystem on every deploy/restart, and the app seeds its five
+# fixed demo assets automatically at startup (see app.py / seed_data.py) —
+# no manual step is required either way. See README.md "Free-tier
+# disposable deployment" for exactly what this means and does not mean.
 #
-# This file only prepares the deployment. Nothing is deployed by writing it.
-# Deployment happens when a human connects this repo in the Render dashboard
-# (or runs `render blueprint launch`) and explicitly approves it.
+# The previously-prepared PAID configuration (Starter plan + persistent
+# disk + preDeployCommand, so real check/audit history survives restarts)
+# remains fully documented in docs/decision-log.md and README.md, and
+# remains the correct choice for any deployment beyond a disposable demo.
+# It is not deleted — see the commented block at the bottom of this file
+# for how to restore it when/if a paid plan is approved again.
+#
+# This file only prepares the deployment. Nothing is deployed by writing
+# it — deployment happens when a human connects this repo in the Render
+# dashboard and explicitly approves it.
 
 services:
   - type: web
     name: lifttag-mvp
     runtime: python
-    plan: starter          # cheapest plan that supports a persistent disk
+    plan: free
     region: oregon          # change to whichever region is closest/preferred
     buildCommand: "pip install -r requirements.txt"
-    preDeployCommand: "python seed.py"
     startCommand: "gunicorn app:app"
     envVars:
       - key: DATABASE_PATH
-        value: /var/data/lifttag.db
+        value: lifttag.db     # relative path in the service's own ephemeral filesystem — resets on redeploy/restart, by design, on the free plan
       - key: PYTHON_VERSION
         value: 3.11.9
-      # BASE_URL is intentionally NOT set here: seed.py automatically falls
-      # back to Render's own RENDER_EXTERNAL_URL (provided for free by
-      # Render on every service), so the printed/seeded tap URLs always
-      # match the real deployed hostname with no manual entry needed.
-    disk:
-      name: lifttag-data
-      mountPath: /var/data
-      sizeGB: 1              # smallest size; £/$ cost is per-GB, see README
+      # BASE_URL is intentionally NOT set here: seed.py (and the automatic
+      # startup seeding in app.py) automatically fall back to Render's own
+      # RENDER_EXTERNAL_URL (provided for free by Render on every service),
+      # so the printed/seeded tap URLs always match the real deployed
+      # hostname with no manual entry needed.
+
+# --- To restore the paid, persistent configuration later ------------------
+# (approved 2026-08-16, superseded for this disposable demo the same day —
+# see docs/decision-log.md for the full history). Replace the `services:`
+# block above with:
+#
+# services:
+#   - type: web
+#     name: lifttag-mvp
+#     runtime: python
+#     plan: starter          # cheapest plan that supports a persistent disk
+#     region: oregon
+#     buildCommand: "pip install -r requirements.txt"
+#     preDeployCommand: "python seed.py"
+#     startCommand: "gunicorn app:app"
+#     envVars:
+#       - key: DATABASE_PATH
+#         value: /var/data/lifttag.db
+#       - key: PYTHON_VERSION
+#         value: 3.11.9
+#     disk:
+#       name: lifttag-data
+#       mountPath: /var/data
+#       sizeGB: 1
+#
+# With that configuration, real check/audit/quarantine history survives
+# restarts and redeploys, because it lives on a genuinely persistent disk
+# instead of the free plan's ephemeral filesystem. It would also make the
+# random-per-deploy Tag ID scheme (models.new_tag_id()) viable again,
+# since URLs would no longer need to survive a filesystem being recreated
+# from scratch — though the fixed demo IDs in seed_data.py would still
+# work fine there too.
