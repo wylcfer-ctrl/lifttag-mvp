@@ -22,7 +22,8 @@ import db as dbmod
 from app import create_app
 from workflow import record_pre_use_check
 from models import STATUS_QUARANTINED
-from seed import seed, TEST_ASSETS
+from seed import seed
+from seed_data import TEST_ASSETS
 
 
 class RepeatedSeedingPreservesTagIdsTestCase(unittest.TestCase):
