@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Import Assets — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_home') }}">&larr; Admin</a></p>
+<h1>Import Assets from CSV</h1>
+
+<p class="note">Expected columns (header row, any order — extra columns ignored, missing optional
+columns treated as blank): <code>{{ columns|join(', ') }}</code>. Only <code>asset_id</code> and
+<code>equipment_type</code> are required. Importing never assigns an NFC Tag — commission each
+asset's tag separately from the Asset Registry afterward.</p>
+
+{% if stage == 'form' %}
+<form method="post">
+  <input type="hidden" name="action" value="preview">
+  <label>Paste CSV
+    <textarea name="csv_text" rows="10" style="width:100%; font-family: monospace; padding: 10px;" placeholder="asset_id,serial_number,equipment_type,description,manufacturer,model,wll,company,periodic_inspection_status,periodic_inspection_due,notes"></textarea>
+  </label>
+  <button type="submit" class="button">PREVIEW</button>
+</form>
+{% endif %}
+
+{% if stage == 'preview' %}
+<div class="alert alert-ok">{{ ok_count }} row(s) ready to import out of {{ results|length }} total.</div>
+<table class="asset-table">
+  <thead><tr><th>Row</th><th>Asset ID</th><th>Equipment Type</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td>{{ r.row_num }}</td>
+      <td>{{ r.data.asset_id or '—' }}</td>
+      <td>{{ r.data.equipment_type or '—' }}</td>
+      <td class="{{ 'status-inservice' if r.status == 'OK' else 'status-quarantined' }}">{{ r.status }}</td>
+      <td>
+        {% if r.errors %}{{ r.errors|join(' ') }}{% endif %}
+        {% if r.serial_warning %}<br><em>Warning: duplicate serial number.</em>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if ok_count > 0 %}
+<form method="post">
+  <input type="hidden" name="action" value="confirm">
+  <textarea name="csv_text" style="display:none;">{{ csv_text }}</textarea>
+  <button type="submit" class="button">CONFIRM IMPORT ({{ ok_count }} asset(s))</button>
+</form>
+{% else %}
+<p class="note">No rows are eligible to import.</p>
+{% endif %}
+<p class="link"><a href="{{ url_for('admin_import') }}">Start over</a></p>
+{% endif %}
+
+{% if stage == 'result' %}
+<div class="alert alert-ok">Imported {{ imported_count }} asset(s). Skipped {{ skipped_count }}.</div>
+<table class="asset-table">
+  <thead><tr><th>Row</th><th>Asset ID</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td>{{ r.row_num }}</td>
+      <td>{{ r.data.asset_id or '—' }}</td>
+      <td class="{{ 'status-inservice' if r.get('imported') else 'status-quarantined' }}">{{ 'IMPORTED' if r.get('imported') else r.status }}</td>
+      <td>{{ r.errors|join(' ') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="link"><a href="{{ url_for('admin_assets') }}">Go to Asset Registry</a></p>
+<p class="link"><a href="{{ url_for('admin_import') }}">Import another file</a></p>
+{% endif %}
+{% endblock %}

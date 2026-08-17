@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.asset_id }} — Asset Registry{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_assets') }}">&larr; Asset Registry</a></p>
+<h1>{{ asset.asset_id }}</h1>
+
+{% if 'QUARANTINED' in asset.current_status %}
+  <div class="alert alert-danger">{{ asset.current_status }}</div>
+{% else %}
+  <div class="alert alert-ok">{{ asset.current_status }}</div>
+{% endif %}
+
+<dl class="asset-details">
+  <dt>Equipment type</dt><dd>{{ asset.equipment_type }}</dd>
+  <dt>Serial number</dt><dd>{{ asset.serial_number or 'Not recorded' }}</dd>
+  <dt>Description</dt><dd>{{ asset.description or 'Not recorded' }}</dd>
+  <dt>Manufacturer</dt><dd>{{ asset.manufacturer or 'Not recorded' }}</dd>
+  <dt>Model</dt><dd>{{ asset.model or 'Not recorded' }}</dd>
+  <dt>WLL / SWL</dt><dd>{{ asset.wll or 'Not recorded' }}</dd>
+  <dt>Owner / Contractor / Company</dt><dd>{{ asset.company or 'Not recorded' }}</dd>
+  <dt>Periodic inspection status</dt><dd>{{ asset.periodic_inspection_status }}</dd>
+  <dt>Periodic inspection due</dt><dd>{{ asset.periodic_inspection_due or 'Not recorded' }}</dd>
+  <dt>Notes</dt><dd>{{ asset.notes or 'None' }}</dd>
+</dl>
+
+<h2>Current NFC tag</h2>
+{% if active_tag %}
+<p>Active Tag ID: <strong>{{ active_tag.tag_id }}</strong>
+  (<a class="link" href="{{ url_for('tag_entry', tag_id=active_tag.tag_id) }}">open field page</a>)</p>
+<a class="button" href="{{ url_for('admin_replace_tag', asset_id=asset.asset_id) }}">REPLACE TAG</a>
+{% else %}
+<p class="note">No active tag — this asset is registered but not yet commissioned with an NFC tag.</p>
+<a class="button" href="{{ url_for('admin_assign_tag', asset_id=asset.asset_id) }}">ASSIGN NFC TAG</a>
+{% endif %}
+
+<h2>Tag history</h2>
+<table class="asset-table">
+  <thead><tr><th>Tag ID</th><th>Active</th><th>Created</th><th>Revoked</th></tr></thead>
+  <tbody>
+  {% for tag in tag_history %}
+    <tr>
+      <td>{{ tag.tag_id }}</td>
+      <td>{{ 'Yes' if tag.active else 'No — historical' }}</td>
+      <td>{{ tag.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ tag.revoked_at.strftime('%Y-%m-%d %H:%M') if tag.revoked_at else '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">No tag has ever been assigned to this asset.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<p class="link"><a href="{{ url_for('audit_history', asset_id=asset.asset_id) }}">View Full Audit History</a></p>
+{% endblock %}

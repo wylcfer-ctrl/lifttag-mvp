@@ -35,4 +35,34 @@ because all data below is fictitious and this environment is not for operational
   {% endfor %}
   </tbody>
 </table>
+
+<h1>Inspection Sessions</h1>
+<p class="note">Inspect multiple accessories in one session instead of a separate form per asset —
+see the Software MVP increment "Inspection Session v1."</p>
+<a class="button" href="{{ url_for('session_new') }}">+ START INSPECTION</a>
+
+{% if session_rows %}
+<table class="asset-table">
+  <thead>
+    <tr><th>Session</th><th>Status</th><th>Lift Supervisor</th><th>Items</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for row in session_rows %}
+    <tr>
+      <td>{{ row.session.session_ref }}</td>
+      <td class="session-status-{{ row.session.status|lower }}">{{ row.session.status }}</td>
+      <td>{{ row.session.lift_supervisor }}</td>
+      <td>{{ row.active_count }}</td>
+      <td><a class="link" href="{{ url_for('session_detail', session_id=row.session.id) }}">Open</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="note">No inspection sessions yet.</p>
+{% endif %}
+
+<h1>Admin</h1>
+<p class="note">Asset Registry, tag commissioning, and CSV import — separate from the field worker
+flow above. See <a href="{{ url_for('admin_home') }}">Admin</a>.</p>
 {% endblock %}

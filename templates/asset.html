@@ -36,4 +36,21 @@
 
 <a class="button" href="{{ url_for('check', tag_id=tag.tag_id) }}">Start Pre-Use Check</a>
 <a class="link" href="{{ url_for('audit_history', asset_id=asset.asset_id) }}">View Audit History</a>
+
+<h2>Add to an inspection session</h2>
+{% if open_sessions %}
+<p class="note">Add this asset to an open Inspection Session instead of checking it on its own.</p>
+<ul class="session-item-list">
+{% for s in open_sessions %}
+  <li class="session-item">
+    <a class="button" href="{{ url_for('session_add_tap', session_id=s.id, tag_id=tag.tag_id) }}">
+      Add to {{ s.session_ref }} ({{ s.status }})
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="note">No inspection session is currently open.</p>
+{% endif %}
+<a class="link" href="{{ url_for('session_new') }}">Start New Inspection Session</a>
 {% endblock %}

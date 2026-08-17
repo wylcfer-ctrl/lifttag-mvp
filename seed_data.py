@@ -21,6 +21,12 @@ TEST_ASSETS = [
     ("CHAIN-001", "Chain Sling"),
     ("SHACKLE-001", "Shackle"),
     ("BEAM-001", "Lifting Beam"),
+    # Added 2026-08-17 for Inspection Session v1 (requirement 17), to
+    # properly demonstrate a realistic multi-accessory session — mirrors the
+    # exact example list in the request (BIN-001, SHACKLE-001, SHACKLE-002,
+    # SLING-001, CHAIN-001). The original five URLs above are unchanged.
+    ("BIN-001", "Lifting Bin"),
+    ("SHACKLE-002", "Shackle"),
 ]
 
 # Fixed, predetermined TEST-ONLY Tag IDs for the five demo assets.
@@ -49,6 +55,10 @@ DEMO_TAG_IDS = {
     "CHAIN-001": "demo-chain-001",
     "SHACKLE-001": "demo-shackle-001",
     "BEAM-001": "demo-beam-001",
+    # Added 2026-08-17 — see TEST_ASSETS above. Same fixed-ID rationale;
+    # the original five above are unchanged.
+    "BIN-001": "demo-bin-001",
+    "SHACKLE-002": "demo-shackle-002",
 }
 
 
