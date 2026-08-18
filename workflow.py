@@ -9,6 +9,7 @@ NEVER release an asset from quarantine. There is no release-from-quarantine
 workflow in this MVP, and none is added here.
 """
 import db as dbmod
+from datetime import timedelta
 from models import (
     STATUS_QUARANTINED,
     STATUS_IN_SERVICE,
@@ -19,6 +20,13 @@ from models import (
     SESSION_STATUS_READY,
     SESSION_STATUS_BLOCKED,
     SESSION_STATUS_COMPLETED,
+    OPERATIONAL_STATE_VALID,
+    OPERATIONAL_STATE_CHECK_REQUIRED,
+    OPERATIONAL_STATE_QUARANTINED,
+    PRE_USE_VALIDITY_HOURS,
+    ROLE_AP,
+    ROLE_SUPERVISOR,
+    now,
     new_tag_id,
 )
 
@@ -133,6 +141,68 @@ def record_pre_use_check(conn, asset, tag_id_used, checked_by, lift_supervisor, 
 
     conn.commit()
     return dbmod.get_check(conn, check_id)
+
+
+# --- Rolling 24h Pre-Use Validity (added 2026-08-18) ------------------------
+#
+# DERIVED-ONLY: nothing here writes to the database, and nothing here is
+# stored as a "result" — see models.py comment on OPERATIONAL_STATE_*.
+# "Do NOT automatically add checks.valid_until ... prefer deriving" — this
+# computes valid_until fresh from the real Check row's timestamp every time,
+# so there is no separate stored value that could ever drift out of sync
+# with the actual check history.
+
+
+def get_valid_until(check):
+    """The exact moment a given PASS check's rolling 24h validity expires.
+    Only meaningful for a PASS check — callers should not call this for a
+    FAIL row (there is no validity to speak of)."""
+    return check.timestamp + timedelta(hours=PRE_USE_VALIDITY_HOURS)
+
+
+def get_operational_state(conn, asset):
+    """
+    Derive the ASSET-LEVEL operational state used by the STANDALONE flow
+    (asset.html, the standalone /t/<tag_id>/check page, and continuous
+    individual checking) — NEVER used to decide whether a NEW Inspection
+    Session item needs its own checklist (that remains governed entirely
+    by add_asset_to_session()'s existing duplicate-add guard — see that
+    function's docstring and the explicit correction: "A previous PASS
+    from another Inspection Session must NOT automatically satisfy the
+    pre-use requirement of a newly-created Inspection Session").
+
+    Precedence (highest first), matching the explicit correction:
+        1. QUARANTINED   — dominates everything else, always.
+        2. CHECK_REQUIRED — no check yet, or the most recent check was a
+           FAIL, or the most recent PASS has exceeded its rolling 24h
+           window ("newer FAIL overrides an earlier valid PASS" is
+           automatically true here because dbmod.get_last_check() always
+           returns the single most recent row by timestamp, whichever
+           result it has).
+        3. VALID          — the most recent check was a PASS and is still
+           within its rolling 24h window (a pure timestamp+timedelta
+           comparison — never a calendar-day/midnight rule).
+
+    Returns (state, last_check, periodic_ok) where periodic_ok is False if
+    asset.periodic_inspection_status != PERIODIC_INSPECTION_VALID (surfaced
+    per requirement 18 — "clearly surface the blocked/invalid state" —
+    without inventing a full automatic expiry engine and without adding a
+    fourth top-level state, per the explicit "do not introduce VALID as
+    though it were another result" instruction keeping this a 3-state model).
+    """
+    periodic_ok = asset.periodic_inspection_status == PERIODIC_INSPECTION_VALID
+
+    if asset.current_status == STATUS_QUARANTINED:
+        return OPERATIONAL_STATE_QUARANTINED, dbmod.get_last_check(conn, asset.asset_id), periodic_ok
+
+    last_check = dbmod.get_last_check(conn, asset.asset_id)
+    if last_check is None or last_check.result != RESULT_PASS:
+        return OPERATIONAL_STATE_CHECK_REQUIRED, last_check, periodic_ok
+
+    if now() <= get_valid_until(last_check):
+        return OPERATIONAL_STATE_VALID, last_check, periodic_ok
+
+    return OPERATIONAL_STATE_CHECK_REQUIRED, last_check, periodic_ok
 
 
 def assign_tag(conn, asset, actor="test-harness"):
@@ -510,3 +580,110 @@ def replace_tag(conn, asset, new_tag_id_value=None, actor="admin"):
     )
     conn.commit()
     return dbmod.get_tag(conn, new_tag_id_value)
+
+
+# --- Demo Role Architecture (added 2026-08-18) ------------------------------
+#
+# DEMO ACCESS — NOT AUTHENTICATED. There is no password, no login, no
+# verified identity anywhere below. This exists only to demonstrate a real
+# AP -> grants -> Supervisor permission ARCHITECTURE (a real registry, real
+# route-level enforcement, a real audit trail of which registered identity
+# performed an action) rather than the explicitly-forbidden approach of
+# free-text "enter your name and role" with nothing behind it. Every place
+# this is surfaced in the UI must say so explicitly (see templates).
+#
+# Pre-use checking itself (both standalone and inside a session) remains
+# completely UNGATED by any of this, unchanged from the original MVP —
+# per requirement 6 ("pre-use checking is NOT exclusive to the AP"). Only
+# /admin/* routes are gated by these roles (see app.py require_role()).
+
+
+class NotAuthorizedError(Exception):
+    """Raised by app.py's require_role() when the current demo actor does
+    not hold one of the roles a route requires. Deliberately NOT raised
+    anywhere in this module directly — authorization is a routing-layer
+    concern, kept separate from the safety-critical functions above it,
+    exactly as record_pre_use_check() etc. remain untouched by any of
+    this."""
+
+
+class RoleAlreadyGrantedError(Exception):
+    """Raised by grant_supervisor() if `name` already holds an active
+    Supervisor grant — prevents a confusing duplicate grant history."""
+
+    def __init__(self, name):
+        self.name = name
+        super().__init__(f"'{name}' already has an active Supervisor grant")
+
+
+class NoActiveGrantError(Exception):
+    """Raised by revoke_supervisor() if `name` has no active grant to revoke."""
+
+    def __init__(self, name):
+        self.name = name
+        super().__init__(f"'{name}' has no active Supervisor grant to revoke")
+
+
+def bootstrap_ap(conn, name):
+    """Idempotently ensures a single named AP identity exists. Used only by
+    seed_data.py to bootstrap a demo environment that otherwise has no AP
+    to grant the first Supervisor — never used to grant Supervisor (only
+    an existing AP may do that, via grant_supervisor() below)."""
+    existing = dbmod.get_active_demo_user_by_name(conn, name)
+    if existing is not None:
+        return existing
+    dbmod.create_demo_user(conn, name, ROLE_AP, granted_by=None)
+    conn.commit()
+    return dbmod.get_active_demo_user_by_name(conn, name)
+
+
+def get_role(conn, name):
+    """Returns the active role for `name` (ROLE_AP / ROLE_SUPERVISOR), or
+    None if unregistered or revoked. An unregistered/None identity is
+    treated as an ordinary Field User for pre-use-check purposes — see
+    module docstring above."""
+    user = dbmod.get_active_demo_user_by_name(conn, name)
+    return user.role if user else None
+
+
+def grant_supervisor(conn, name, granted_by_name, actor):
+    """
+    AP grants Supervisor access to `name` (requirement 12: "Only AP may
+    grant or revoke Supervisor access"). Caller (app.py route) is
+    responsible for having already confirmed granted_by_name currently
+    holds ROLE_AP — this function itself re-checks defensively, since a
+    safety/permission guard belongs at the point of the actual mutation,
+    not only at the route layer.
+    """
+    if get_role(conn, granted_by_name) != ROLE_AP:
+        raise NotAuthorizedError(f"'{granted_by_name}' is not an active AP and cannot grant Supervisor access")
+    if get_role(conn, name) == ROLE_SUPERVISOR:
+        raise RoleAlreadyGrantedError(name)
+
+    dbmod.create_demo_user(conn, name, ROLE_SUPERVISOR, granted_by=granted_by_name)
+    conn.commit()
+    dbmod.insert_demo_auth_event(
+        conn, "SUPERVISOR_GRANTED", actor, target_name=name,
+        previous_role=None, new_role=ROLE_SUPERVISOR, reference=f"granted_by:{granted_by_name}",
+    )
+    conn.commit()
+    return dbmod.get_active_demo_user_by_name(conn, name)
+
+
+def revoke_supervisor(conn, name, revoked_by_name, actor):
+    """AP revokes Supervisor access from `name` (requirement 12). Same
+    defensive re-check as grant_supervisor()."""
+    if get_role(conn, revoked_by_name) != ROLE_AP:
+        raise NotAuthorizedError(f"'{revoked_by_name}' is not an active AP and cannot revoke Supervisor access")
+    user = dbmod.get_active_demo_user_by_name(conn, name)
+    if user is None or user.role != ROLE_SUPERVISOR:
+        raise NoActiveGrantError(name)
+
+    dbmod.revoke_demo_user(conn, user.id)
+    conn.commit()
+    dbmod.insert_demo_auth_event(
+        conn, "SUPERVISOR_REVOKED", actor, target_name=name,
+        previous_role=ROLE_SUPERVISOR, new_role=None, reference=f"revoked_by:{revoked_by_name}",
+    )
+    conn.commit()
+    return dbmod.get_demo_user(conn, user.id)

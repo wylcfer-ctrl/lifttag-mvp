@@ -36,6 +36,30 @@ ITEM_STATUS_REMOVED = "REMOVED"
 # Per-item pre-use check result, before a PASS/FAIL has been recorded.
 CHECK_RESULT_PENDING = "PENDING"
 
+# --- Rolling 24h Pre-Use Validity + Demo Role Architecture (added 2026-08-18)
+#
+# These are DERIVED DISPLAY STATES ONLY — see workflow.get_operational_state().
+# They are never written to checks.result. checks.result remains exactly
+# RESULT_PASS / RESULT_FAIL, always. Per explicit correction: "Do NOT
+# introduce VALID as though it were another inspection result equivalent to
+# PASS."
+OPERATIONAL_STATE_VALID = "VALID CHECK"
+OPERATIONAL_STATE_CHECK_REQUIRED = "CHECK REQUIRED"
+OPERATIONAL_STATE_QUARANTINED = "QUARANTINED"
+
+# Rolling window, not a calendar-day rule. See workflow.get_operational_state().
+PRE_USE_VALIDITY_HOURS = 24
+
+# Demo role architecture (explicitly NOT real authentication — see
+# workflow.py / app.py "DEMO ACCESS — NOT AUTHENTICATED" comments and every
+# template that surfaces this). AP is the primary authority; Supervisor is
+# granted by AP; anyone with no registered role is treated as an ordinary
+# Field User for pre-use-check purposes only (checking remains open to
+# everyone, unchanged from the original MVP — only /admin/* routes are
+# gated by these roles).
+ROLE_AP = "AP"
+ROLE_SUPERVISOR = "SUPERVISOR"
+
 
 def now():
     return datetime.now(timezone.utc)
@@ -154,3 +178,23 @@ class SessionItem:
     check_id: Optional[int]
     added_at: datetime
     removed_at: Optional[datetime]
+
+
+@dataclass
+class DemoUser:
+    """
+    A registered DEMO identity (added 2026-08-18) — NOT a real user account.
+    No password, no login, no verified identity. See workflow.py /
+    app.py / templates for the explicit "DEMO ACCESS — NOT AUTHENTICATED"
+    labelling required everywhere this is surfaced.
+    """
+    id: int
+    name: str
+    role: str  # ROLE_AP or ROLE_SUPERVISOR
+    granted_by: Optional[str]
+    created_at: datetime
+    revoked_at: Optional[datetime]
+
+    @property
+    def active(self):
+        return self.revoked_at is None

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Add Equipment — {{ session.session_ref }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('session_detail', session_id=session.id) }}">&larr; Inspection {{ session.session_ref }}</a></p>
+<h1>Add Equipment — {{ session.session_ref }}</h1>
+
+<p class="note">Tap / choose the next NFC tag. No physical NFC hardware exists yet, so for the Test
+Environment each demo asset below stands in for tapping its tag — selecting one behaves exactly as
+if that tag had been tapped. You can keep adding accessories from this one screen — there is no
+limit and no need to go back to the session page between scans.</p>
+
+{% if added_asset %}
+  {% if added_asset.current_status != 'IN SERVICE' or added_asset.periodic_inspection_status != 'VALID' %}
+  <div class="alert alert-danger">
+    Added {{ added_asset.asset_id }} — but it is currently <strong>{{ added_asset.current_status }}</strong>{% if added_asset.periodic_inspection_status != 'VALID' %}, periodic inspection {{ added_asset.periodic_inspection_status }}{% endif %}.
+    This session cannot become READY while it stays active — remove it, or resolve the issue, before completing.
+  </div>
+  {% else %}
+  <div class="alert alert-ok">Added {{ added_asset.asset_id }} to this inspection.</div>
+  {% endif %}
+{% endif %}
+{% if duplicate_asset_id %}
+<div class="alert alert-danger">{{ duplicate_asset_id }} is already part of this inspection.</div>
+{% endif %}
+{% if unknown_tag_id %}
+<div class="alert alert-danger">Tag ID '{{ unknown_tag_id }}' is not recognised. Nothing was added.</div>
+{% endif %}
+{% if revoked_tag_id %}
+<div class="alert alert-danger">Tag ID '{{ revoked_tag_id }}' is no longer active. Nothing was added.</div>
+{% endif %}
+
+<h2 id="scan-more">Scan / Add Another Accessory</h2>
+<ul class="session-item-list">
+{% for c in choices %}
+  <li class="session-item">
+    <div class="session-item-head">
+      <a class="button" href="{{ url_for('session_add_tap', session_id=session.id, tag_id=c.tag_id) }}">
+        {{ 'Already added: ' if c.already_active else 'Tap ' }}{{ c.asset_id }}
+      </a>
+    </div>
+    <div class="session-item-status">
+      {{ c.asset.equipment_type }} —
+      <span class="{{ 'status-quarantined' if c.asset.current_status != 'IN SERVICE' else 'status-inservice' }}">{{ c.asset.current_status }}</span>
+    </div>
+  </li>
+{% endfor %}
+</ul>
+
+<h2>Current Working List — {{ active|length }} ITEM{{ 's' if active|length != 1 else '' }}</h2>
+<p class="note">Stays visible here so you don't need to leave this screen to see what's already
+been added, or to check an item you just added.</p>
+
+{% if not active %}
+<p class="note">Nothing added yet — tap an accessory above.</p>
+{% endif %}
+
+<ul class="session-item-list">
+{% for row in active %}
+  {% set item = row.item %}
+  {% set asset = row.asset %}
+  <li class="session-item {{ 'session-item-flagged' if item.check_result == 'FAIL' or asset.current_status != 'IN SERVICE' else '' }}">
+    <div class="session-item-head">
+      ✓ {{ asset.asset_id }} — {{ asset.equipment_type }}
+    </div>
+    <div class="session-item-status">
+      <span class="{{ 'status-quarantined' if asset.current_status != 'IN SERVICE' else 'status-inservice' }}">{{ asset.current_status }}</span>
+      &nbsp;·&nbsp;
+      <span class="check-badge check-badge-{{ item.check_result|lower }}">{{ item.check_result }}</span>
+    </div>
+    <div class="session-item-actions">
+      {% if item.check_result == 'PENDING' %}
+        <a class="button" href="{{ url_for('session_item_check', session_id=session.id, item_id=item.id) }}">PASS / FAIL CHECK</a>
+      {% else %}
+        <a class="link" href="{{ url_for('session_item_check', session_id=session.id, item_id=item.id) }}">Re-check</a>
+      {% endif %}
+    </div>
+  </li>
+{% endfor %}
+</ul>
+
+<p>
+  <a class="link" href="#scan-more">Scan another &uarr;</a>
+  &nbsp;·&nbsp;
+  <a class="link" href="{{ url_for('session_detail', session_id=session.id) }}">FINISH ADDING EQUIPMENT — back to inspection</a>
+</p>
+{% endblock %}

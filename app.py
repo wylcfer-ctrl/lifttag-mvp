@@ -27,8 +27,9 @@ an asset, check, audit event, or quarantine status that already exists in
 the current database (see tests/test_startup_seeding.py).
 """
 import os
+import secrets
 
-from flask import Flask, render_template, redirect, url_for, request, abort
+from flask import Flask, render_template, redirect, url_for, request, abort, session
 
 import db as dbmod
 from workflow import (
@@ -47,16 +48,51 @@ from workflow import (
     AssetAlreadyHasActiveTagError,
     NoActiveTagToReplaceError,
     TagIdAlreadyExistsError,
+    get_operational_state,
+    get_valid_until,
+    grant_supervisor,
+    revoke_supervisor,
+    get_role,
+    NotAuthorizedError,
+    RoleAlreadyGrantedError,
+    NoActiveGrantError,
 )
-from models import RESULT_PASS, RESULT_FAIL, SESSION_STATUS_COMPLETED
-from seed_data import seed_demo_data, DEMO_TAG_IDS
+from models import (
+    RESULT_PASS,
+    RESULT_FAIL,
+    SESSION_STATUS_COMPLETED,
+    OPERATIONAL_STATE_VALID,
+    OPERATIONAL_STATE_QUARANTINED,
+    ROLE_AP,
+    ROLE_SUPERVISOR,
+)
+from seed_data import seed_demo_data, seed_demo_users, DEMO_TAG_IDS, DEMO_AP_NAME
 import csv_import
 
 TEST_BANNER = "LiftTag MVP — Test Environment — Fictitious Data Only — Not for Operational Use"
 
+# The five generic pre-use checklist points (added 2026-08-18), used
+# identically by BOTH the standalone check route below and the existing
+# session_item_check route — a single shared list so the two can never
+# silently drift out of sync.
+CHECKLIST_FIELDS = [
+    ("chk_visual", "Visual condition acceptable"),
+    ("chk_tag_legible", "Identification / tag legible"),
+    ("chk_no_damage", "No obvious damage or deformation"),
+    ("chk_no_wear", "No unacceptable wear"),
+    ("chk_connections", "Components / connections appear serviceable"),
+]
+
 
 def create_app(database_path=None):
     app = Flask(__name__)
+    # Only used to sign the "acting as" DEMO role-switcher cookie (see
+    # /demo/act-as below) — never used for anything security-sensitive.
+    # A fresh random key on every process start is fine for this: it only
+    # means a demo "acting as" choice resets on restart, exactly like the
+    # rest of this disposable Render Free environment's ephemeral state.
+    app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
     db_path = database_path or os.environ.get("DATABASE_PATH", "lifttag.db")
     app.config["DATABASE_PATH"] = db_path
     dbmod.init_db(db_path)
@@ -67,11 +103,39 @@ def create_app(database_path=None):
     # Free).
     _seed_conn = dbmod.get_conn(db_path)
     seed_demo_data(_seed_conn)
+    seed_demo_users(_seed_conn)  # bootstrap AP identity — see seed_data.py
     _seed_conn.close()
 
     @app.context_processor
     def inject_banner():
         return {"TEST_BANNER": TEST_BANNER}
+
+    @app.context_processor
+    def inject_current_actor():
+        """Makes the current DEMO "acting as" identity/role available to
+        every template (for nav/banner display), without every route
+        needing to pass it explicitly. DEMO ACCESS — NOT AUTHENTICATED —
+        see workflow.py module docstring."""
+        name = session.get("demo_actor_name")
+        conn = dbmod.get_conn(db_path)
+        role = get_role(conn, name) if name else None
+        conn.close()
+        return {"demo_actor_name": name, "demo_actor_role": role}
+
+    def require_role(conn, allowed_roles):
+        """Route-layer authorization gate (DEMO ONLY — see workflow.py
+        module docstring). Raises NotAuthorizedError if the current
+        "acting as" identity does not hold one of allowed_roles. Callers
+        catch this and render a clear 403, never a silent redirect, so
+        the demo permission boundary is visible rather than masked."""
+        name = session.get("demo_actor_name")
+        role = get_role(conn, name) if name else None
+        if role not in allowed_roles:
+            raise NotAuthorizedError(
+                f"This action requires one of {allowed_roles}; "
+                f"the current DEMO actor ('{name or 'none selected'}') has role {role!r}."
+            )
+        return name, role
 
     def _resolve_or_fail_safe(conn, tag_id):
         """Shared fail-safe handling for unknown/revoked tags across routes."""
@@ -114,10 +178,15 @@ def create_app(database_path=None):
             return fail_response
         tag, asset = resolved
         last_check = dbmod.get_last_check(conn, asset.asset_id)
+        state, state_check, periodic_ok = get_operational_state(conn, asset)
+        state_valid_until = get_valid_until(state_check) if (state == OPERATIONAL_STATE_VALID and state_check) else None
         open_sessions = dbmod.list_open_sessions(conn)
         conn.close()
         return render_template(
-            "asset.html", asset=asset, tag=tag, last_check=last_check, open_sessions=open_sessions
+            "asset.html", asset=asset, tag=tag, last_check=last_check,
+            open_sessions=open_sessions, operational_state=state,
+            operational_state_check=state_check, operational_state_valid_until=state_valid_until,
+            periodic_ok=periodic_ok,
         )
 
     @app.route("/t/<tag_id>/check", methods=["GET", "POST"])
@@ -128,11 +197,16 @@ def create_app(database_path=None):
             conn.close()
             return fail_response
         tag, asset = resolved
+        state, state_check, periodic_ok = get_operational_state(conn, asset)
+        state_valid_until = get_valid_until(state_check) if (state == OPERATIONAL_STATE_VALID and state_check) else None
 
         if request.method == "POST":
             checked_by = request.form.get("checked_by", "").strip()
             lift_supervisor = request.form.get("lift_supervisor", "").strip()
             result = request.form.get("result", "").strip().upper()
+            failure_reason = request.form.get("failure_reason", "").strip()
+            checked_fields = [key for key, _label in CHECKLIST_FIELDS if request.form.get(key) == "on"]
+            checklist_confirmed = len(checked_fields) == len(CHECKLIST_FIELDS)
 
             errors = []
             if not checked_by:
@@ -141,10 +215,19 @@ def create_app(database_path=None):
                 errors.append("Lift Supervisor is required.")
             if result not in ("PASS", "FAIL"):
                 errors.append("Result must be PASS or FAIL.")
+            if not checklist_confirmed:
+                errors.append("Confirm every checklist point before submitting.")
+            if result == "FAIL" and not failure_reason:
+                errors.append("A failure reason / defect note is required for a FAIL result.")
 
             if errors:
                 conn.close()
-                return render_template("check_form.html", asset=asset, tag=tag, errors=errors), 400
+                return render_template(
+                    "check_form.html", asset=asset, tag=tag, errors=errors,
+                    operational_state=state, operational_state_check=state_check,
+                    operational_state_valid_until=state_valid_until,
+                    periodic_ok=periodic_ok, checklist_fields=CHECKLIST_FIELDS, form=request.form,
+                ), 400
 
             check_record = record_pre_use_check(
                 conn,
@@ -153,13 +236,20 @@ def create_app(database_path=None):
                 checked_by=checked_by,
                 lift_supervisor=lift_supervisor,
                 result=result,
+                failure_reason=(failure_reason or None),
+                checklist_confirmed=True,
             )
             check_id = check_record.id
             conn.close()
             return redirect(url_for("check_result", tag_id=tag_id, check_id=check_id))
 
         conn.close()
-        return render_template("check_form.html", asset=asset, tag=tag, errors=None)
+        return render_template(
+            "check_form.html", asset=asset, tag=tag, errors=None,
+            operational_state=state, operational_state_check=state_check,
+            operational_state_valid_until=state_valid_until,
+            periodic_ok=periodic_ok, checklist_fields=CHECKLIST_FIELDS, form={},
+        )
 
     @app.route("/t/<tag_id>/check/result/<int:check_id>")
     def check_result(tag_id, check_id):
@@ -285,11 +375,16 @@ def create_app(database_path=None):
         duplicate_asset_id = request.args.get("duplicate")
         unknown_tag_id = request.args.get("unknown")
         revoked_tag_id = request.args.get("revoked")
+        # Same-screen requirement: show the current working list right here
+        # too, so the field user never has to leave this page to see what
+        # has already been added while they keep scanning.
+        active, removed, attention_count = _session_items_context(conn, session_id)
         conn.close()
         return render_template(
             "session_add.html", session=session, choices=choices,
             added_asset=added_asset, duplicate_asset_id=duplicate_asset_id,
             unknown_tag_id=unknown_tag_id, revoked_tag_id=revoked_tag_id,
+            active=active, attention_count=attention_count,
         )
 
     @app.route("/session/<int:session_id>/add/<tag_id>")
@@ -447,6 +542,11 @@ def create_app(database_path=None):
     @app.route("/admin/assets")
     def admin_assets():
         conn = dbmod.get_conn(db_path)
+        try:
+            require_role(conn, (ROLE_AP, ROLE_SUPERVISOR))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
         query = request.args.get("q", "")
         results = dbmod.search_assets(conn, query)
         rows = []
@@ -458,6 +558,11 @@ def create_app(database_path=None):
     @app.route("/admin/assets/<asset_id>")
     def admin_asset_detail(asset_id):
         conn = dbmod.get_conn(db_path)
+        try:
+            require_role(conn, (ROLE_AP, ROLE_SUPERVISOR))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
         asset = dbmod.get_asset(conn, asset_id)
         if asset is None:
             conn.close()
@@ -472,6 +577,11 @@ def create_app(database_path=None):
     @app.route("/admin/assets/<asset_id>/assign-tag", methods=["GET", "POST"])
     def admin_assign_tag(asset_id):
         conn = dbmod.get_conn(db_path)
+        try:
+            actor_name, _role = require_role(conn, (ROLE_AP, ROLE_SUPERVISOR))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
         asset = dbmod.get_asset(conn, asset_id)
         if asset is None:
             conn.close()
@@ -486,7 +596,7 @@ def create_app(database_path=None):
         if request.method == "POST":
             custom_tag_id = (request.form.get("tag_id") or "").strip() or None
             try:
-                commission_tag(conn, asset, tag_id=custom_tag_id, actor="admin-commissioning")
+                commission_tag(conn, asset, tag_id=custom_tag_id, actor=f"{actor_name} (DEMO {_role})")
                 conn.close()
                 return redirect(url_for("admin_asset_detail", asset_id=asset_id))
             except TagIdAlreadyExistsError as e:
@@ -503,6 +613,11 @@ def create_app(database_path=None):
     @app.route("/admin/assets/<asset_id>/replace-tag", methods=["GET", "POST"])
     def admin_replace_tag(asset_id):
         conn = dbmod.get_conn(db_path)
+        try:
+            actor_name, _role = require_role(conn, (ROLE_AP, ROLE_SUPERVISOR))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
         asset = dbmod.get_asset(conn, asset_id)
         if asset is None:
             conn.close()
@@ -517,7 +632,7 @@ def create_app(database_path=None):
         if request.method == "POST":
             custom_tag_id = (request.form.get("tag_id") or "").strip() or None
             try:
-                replace_tag(conn, asset, new_tag_id_value=custom_tag_id, actor="admin-commissioning")
+                replace_tag(conn, asset, new_tag_id_value=custom_tag_id, actor=f"{actor_name} (DEMO {_role})")
                 conn.close()
                 return redirect(url_for("admin_asset_detail", asset_id=asset_id))
             except TagIdAlreadyExistsError as e:
@@ -535,13 +650,19 @@ def create_app(database_path=None):
 
     @app.route("/admin/import", methods=["GET", "POST"])
     def admin_import():
+        conn = dbmod.get_conn(db_path)
+        try:
+            actor_name, _role = require_role(conn, (ROLE_AP, ROLE_SUPERVISOR))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
+
         if request.method == "POST":
             csv_text = request.form.get("csv_text", "")
             action = request.form.get("action", "preview")
-            conn = dbmod.get_conn(db_path)
 
             if action == "confirm":
-                results = csv_import.commit_import(conn, csv_text, actor="admin-import")
+                results = csv_import.commit_import(conn, csv_text, actor=f"{actor_name} (DEMO {_role})")
                 conn.close()
                 imported = [r for r in results if r.get("imported")]
                 skipped = [r for r in results if not r.get("imported")]
@@ -559,9 +680,113 @@ def create_app(database_path=None):
                 csv_text=csv_text, columns=csv_import.IMPORT_COLUMNS,
             )
 
+        conn.close()
         return render_template(
             "admin_import.html", stage="form", results=None, csv_text="", columns=csv_import.IMPORT_COLUMNS
         )
+
+    # --- Demo Role Architecture routes (added 2026-08-18) -------------------
+    #
+    # DEMO ACCESS — NOT AUTHENTICATED. No password anywhere below. "Acting
+    # as" is a plain, unauthenticated choice from the REGISTERED identity
+    # list (never free-text name+role) stored in a signed session cookie —
+    # see workflow.py module docstring and create_app()'s comment on
+    # app.secret_key above.
+
+    @app.route("/demo/act-as", methods=["GET", "POST"])
+    def demo_act_as():
+        conn = dbmod.get_conn(db_path)
+        if request.method == "POST":
+            chosen = request.form.get("name") or None
+            if chosen:
+                # Must be a currently-registered, active identity — this is
+                # a selector over the real registry, not a free-text claim.
+                user = dbmod.get_active_demo_user_by_name(conn, chosen)
+                if user is None:
+                    users = dbmod.list_active_demo_users(conn)
+                    conn.close()
+                    return render_template(
+                        "demo_act_as.html", users=users,
+                        error=f"'{chosen}' is not a currently-registered active identity.",
+                    ), 400
+                session["demo_actor_name"] = chosen
+            else:
+                session.pop("demo_actor_name", None)  # explicit "act as unregistered Field User"
+            conn.close()
+            return redirect(url_for("index"))
+
+        users = dbmod.list_active_demo_users(conn)
+        conn.close()
+        return render_template("demo_act_as.html", users=users, error=None)
+
+    @app.route("/admin/users", methods=["GET"])
+    def admin_users():
+        conn = dbmod.get_conn(db_path)
+        try:
+            require_role(conn, (ROLE_AP,))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
+        all_users = dbmod.list_all_demo_users(conn)
+        events = dbmod.list_demo_auth_events(conn)
+        conn.close()
+        return render_template("admin_users.html", users=all_users, events=events, error=None)
+
+    @app.route("/admin/users/grant", methods=["POST"])
+    def admin_users_grant():
+        conn = dbmod.get_conn(db_path)
+        try:
+            actor_name, _role = require_role(conn, (ROLE_AP,))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
+
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            all_users = dbmod.list_all_demo_users(conn)
+            events = dbmod.list_demo_auth_events(conn)
+            conn.close()
+            return render_template(
+                "admin_users.html", users=all_users, events=events, error="A name is required."
+            ), 400
+
+        try:
+            grant_supervisor(conn, name, granted_by_name=actor_name, actor=f"{actor_name} (DEMO {ROLE_AP})")
+            conn.close()
+            return redirect(url_for("admin_users"))
+        except RoleAlreadyGrantedError as e:
+            all_users = dbmod.list_all_demo_users(conn)
+            events = dbmod.list_demo_auth_events(conn)
+            conn.close()
+            return render_template(
+                "admin_users.html", users=all_users, events=events, error=str(e)
+            ), 400
+
+    @app.route("/admin/users/<int:user_id>/revoke", methods=["POST"])
+    def admin_users_revoke(user_id):
+        conn = dbmod.get_conn(db_path)
+        try:
+            actor_name, _role = require_role(conn, (ROLE_AP,))
+        except NotAuthorizedError as e:
+            conn.close()
+            return render_template("demo_forbidden.html", message=str(e)), 403
+
+        target = dbmod.get_demo_user(conn, user_id)
+        if target is None:
+            conn.close()
+            abort(404)
+
+        try:
+            revoke_supervisor(conn, target.name, revoked_by_name=actor_name, actor=f"{actor_name} (DEMO {ROLE_AP})")
+            conn.close()
+            return redirect(url_for("admin_users"))
+        except NoActiveGrantError as e:
+            all_users = dbmod.list_all_demo_users(conn)
+            events = dbmod.list_demo_auth_events(conn)
+            conn.close()
+            return render_template(
+                "admin_users.html", users=all_users, events=events, error=str(e)
+            ), 400
 
     return app
 

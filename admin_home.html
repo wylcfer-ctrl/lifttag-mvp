@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Admin — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>Admin</h1>
+<p class="note">Administrator / commissioning tools — separate from the field worker flow (tap a
+tag, run an Inspection Session). A field worker never needs anything on this page.</p>
+
+<p><a class="button" href="{{ url_for('admin_assets') }}">ASSET REGISTRY</a></p>
+<p><a class="button" href="{{ url_for('admin_import') }}">IMPORT ASSETS FROM CSV</a></p>
+<p><a class="button" href="{{ url_for('admin_users') }}">USERS (AP only, DEMO)</a></p>
+{% endblock %}

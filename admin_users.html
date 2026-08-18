@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Admin: Users (DEMO) — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('admin_home') }}">&larr; Admin</a></p>
+<h1>Users — DEMO ACCESS, NOT AUTHENTICATED</h1>
+
+<div class="alert alert-danger">
+  This registry demonstrates the AP / Supervisor permission architecture only. It is not a real
+  user-account system — there is no password and no verified identity behind any name below.
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<h2>Currently registered</h2>
+<table class="asset-table">
+  <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Granted by</th><th></th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td>{{ u.name }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ 'Active' if u.active else 'Revoked' }}</td>
+      <td>{{ u.granted_by or '—' }}</td>
+      <td>
+        {% if u.active and u.role == 'SUPERVISOR' %}
+        <form method="post" action="{{ url_for('admin_users_revoke', user_id=u.id) }}" style="display:inline;">
+          <button type="submit" class="link">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Grant Supervisor access</h2>
+<p class="note">Only AP may grant Supervisor access. The granted name becomes a registered DEMO
+identity selectable at <a href="{{ url_for('demo_act_as') }}">Act As (DEMO)</a>.</p>
+<form method="post" action="{{ url_for('admin_users_grant') }}">
+  <label>Name
+    <input type="text" name="name" required>
+  </label>
+  <button type="submit" class="button">Grant Supervisor</button>
+</form>
+
+<h2>Grant / revoke audit trail</h2>
+<table class="asset-table">
+  <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Target</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+    <tr><td>{{ e.timestamp }}</td><td>{{ e.event_type }}</td><td>{{ e.actor }}</td><td>{{ e.target_name or '—' }}</td></tr>
+  {% else %}
+    <tr><td colspan="4">No grant/revoke events yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

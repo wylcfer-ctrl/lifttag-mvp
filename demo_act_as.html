@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Act As (DEMO) — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>Act As — DEMO ACCESS, NOT AUTHENTICATED</h1>
+
+<div class="alert alert-danger">
+  This is a DEMO permission switcher only. There is no password, no login, and no verification
+  that you actually are the identity you select. It exists only to demonstrate the AP / Supervisor
+  / Field User permission architecture and its audit trail — it is <strong>not</strong> real
+  authentication and must never be treated as one.
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<p class="note">Currently acting as:
+  <strong>{{ demo_actor_name or 'Unregistered Field User (no role selected)' }}</strong>
+  {% if demo_actor_role %}— DEMO role: {{ demo_actor_role }}{% endif %}
+</p>
+
+<form method="post">
+  <fieldset>
+    <legend>Choose a REGISTERED demo identity to act as (or none, for an ordinary Field User)</legend>
+    <label class="radio"><input type="radio" name="name" value="" checked> None — Field User (can still perform pre-use checks)</label>
+    {% for u in users %}
+    <label class="radio"><input type="radio" name="name" value="{{ u.name }}"> {{ u.name }} — {{ u.role }}</label>
+    {% endfor %}
+  </fieldset>
+  <button type="submit" class="button">Set DEMO Identity</button>
+</form>
+
+<p class="note">Only a registered active AP/Supervisor identity can be selected here — this is a
+picker over the real DEMO registry (see <a href="{{ url_for('admin_users') }}">Admin: Users</a>,
+AP-only), never a free-text name+role claim.</p>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Pre-Use Check — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('tag_entry', tag_id=tag.tag_id) }}">&larr; {{ asset.asset_id }}</a></p>
+<h1>Pre-Use Check — {{ asset.asset_id }}</h1>
+
+{% if operational_state == 'QUARANTINED' %}
+<div class="alert alert-danger">
+  This asset is currently {{ asset.current_status }}. Recording a check here does not release it
+  from quarantine.
+</div>
+{% elif operational_state == 'VALID CHECK' %}
+<div class="alert alert-ok">
+  PRE-USE CHECK VALID — last checked {{ operational_state_check.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}
+  by {{ operational_state_check.checked_by }}, valid until
+  {{ operational_state_valid_until.strftime('%Y-%m-%d %H:%M UTC') }}
+</div>
+<p class="note">A valid pre-use check already exists for this asset. You may still perform a new
+check now if operationally required — this is not blocked, just not required.</p>
+{% endif %}
+
+{% if not periodic_ok %}
+<div class="alert alert-danger">Periodic inspection status: {{ asset.periodic_inspection_status }} — operational use remains blocked regardless of any pre-use check result.</div>
+{% endif %}
+
+{% if errors %}
+<div class="alert alert-danger">
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post">
+  <fieldset>
+    <legend>Confirm before recording a result</legend>
+    {% for key, label in checklist_fields %}
+    <label style="display:block; font-weight:500; margin:8px 0;">
+      <input type="checkbox" name="{{ key }}" {{ 'checked' if form.get(key) == 'on' else '' }}> {{ label }}
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <label>Checked By
+    <input type="text" name="checked_by" value="{{ form.get('checked_by', '') }}" required>
+  </label>
+  <label>Lift Supervisor
+    <input type="text" name="lift_supervisor" value="{{ form.get('lift_supervisor', '') }}" required>
+  </label>
+
+  <fieldset>
+    <legend>Result</legend>
+    <label class="radio"><input type="radio" name="result" value="PASS" {{ 'checked' if form.get('result') == 'PASS' else '' }} required> PASS</label>
+    <label class="radio"><input type="radio" name="result" value="FAIL" {{ 'checked' if form.get('result') == 'FAIL' else '' }}> FAIL</label>
+  </fieldset>
+
+  <label>Failure reason / defect note (required for FAIL)
+    <input type="text" name="failure_reason" value="{{ form.get('failure_reason', '') }}">
+  </label>
+
+  <button type="submit" class="button">Submit Check</button>
+</form>
+{% endblock %}

@@ -13,7 +13,8 @@ employee names, or real company data here.
 import sqlite3
 
 import db as dbmod
-from models import STATUS_IN_SERVICE
+from models import STATUS_IN_SERVICE, ROLE_AP
+import workflow
 
 TEST_ASSETS = [
     ("SLING-001", "Web Sling"),
@@ -112,3 +113,22 @@ def seed_demo_data(conn):
 
         result.append((asset_id, tag.tag_id))
     return result
+
+
+# --- Demo Role Architecture bootstrap (added 2026-08-18) --------------------
+#
+# DEMO ACCESS — NOT AUTHENTICATED (see workflow.py / models.py). A brand new
+# database has no AP registered at all, and only an existing AP may grant
+# Supervisor access — so a demo environment needs exactly one bootstrap AP
+# identity to exist from the start, or the grant workflow could never be
+# demonstrated. This is clearly namespaced "Demo AP" (matching the existing
+# "demo-..." Tag ID naming convention) so it can never be mistaken for a
+# real person's account. Idempotent — see workflow.bootstrap_ap().
+DEMO_AP_NAME = "Demo AP"
+
+
+def seed_demo_users(conn):
+    """Idempotently ensures the single bootstrap AP identity exists. Safe to
+    call on every startup, including many times against the same database —
+    workflow.bootstrap_ap() is itself idempotent (checks before creating)."""
+    return workflow.bootstrap_ap(conn, DEMO_AP_NAME)

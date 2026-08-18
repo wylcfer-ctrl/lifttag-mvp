@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.asset_id }} — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>{{ asset.asset_id }}</h1>
+
+{% if 'QUARANTINED' in asset.current_status %}
+  <div class="alert alert-danger">{{ asset.current_status }}</div>
+  {% if last_check and last_check.result == 'PASS' %}
+  <p class="note">The most recent pre-use check passed, but this does <strong>not</strong> release
+  the asset from quarantine. There is no release-from-quarantine workflow in this MVP — release
+  requires a process this project has not yet defined.</p>
+  {% endif %}
+{% else %}
+  <div class="alert alert-ok">{{ asset.current_status }}</div>
+  {% if operational_state == 'VALID CHECK' %}
+  <div class="alert alert-ok">
+    PRE-USE CHECK VALID — last checked {{ operational_state_check.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}
+    by {{ operational_state_check.checked_by }} — valid until
+    {{ operational_state_valid_until.strftime('%Y-%m-%d %H:%M UTC') }}
+  </div>
+  {% else %}
+  <div class="alert alert-danger">CHECK REQUIRED — no valid pre-use check within the last 24 hours.</div>
+  {% endif %}
+{% endif %}
+
+{% if not periodic_ok %}
+<div class="alert alert-danger">Periodic inspection status: {{ asset.periodic_inspection_status }} — operational use remains blocked.</div>
+{% endif %}
+
+<dl class="asset-details">
+  <dt>Equipment type</dt><dd>{{ asset.equipment_type }}</dd>
+  <dt>Current Tag ID</dt><dd>{{ tag.tag_id }}</dd>
+  <dt>Periodic inspection status</dt><dd>{{ asset.periodic_inspection_status }}</dd>
+  <dt>Current equipment status</dt>
+  <dd class="{{ 'status-quarantined' if 'QUARANTINED' in asset.current_status else 'status-inservice' }}">
+    {{ asset.current_status }}
+  </dd>
+  <dt>Last pre-use check</dt>
+  <dd>
+    {% if last_check %}
+      {{ last_check.result }} — {{ last_check.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}
+      (checked by {{ last_check.checked_by }}, supervisor {{ last_check.lift_supervisor }})
+    {% else %}
+      No pre-use check recorded yet.
+    {% endif %}
+  </dd>
+</dl>
+
+<a class="button" href="{{ url_for('check', tag_id=tag.tag_id) }}">Start Pre-Use Check</a>
+<a class="link" href="{{ url_for('audit_history', asset_id=asset.asset_id) }}">View Audit History</a>
+
+<h2>Add to an inspection session</h2>
+{% if open_sessions %}
+<p class="note">Add this asset to an open Inspection Session instead of checking it on its own.</p>
+<ul class="session-item-list">
+{% for s in open_sessions %}
+  <li class="session-item">
+    <a class="button" href="{{ url_for('session_add_tap', session_id=s.id, tag_id=tag.tag_id) }}">
+      Add to {{ s.session_ref }} ({{ s.status }})
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="note">No inspection session is currently open.</p>
+{% endif %}
+<a class="link" href="{{ url_for('session_new') }}">Start New Inspection Session</a>
+{% endblock %}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LiftTag MVP{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="banner">{{ TEST_BANNER }}</div>
+  <div class="banner" style="background:#333;">
+    DEMO ACCESS — NOT AUTHENTICATED — acting as:
+    {{ demo_actor_name or 'Unregistered Field User' }}{% if demo_actor_role %} ({{ demo_actor_role }}){% endif %}
+    · <a href="{{ url_for('demo_act_as') }}" style="color:#fff;">switch</a>
+    · <a href="{{ url_for('admin_home') }}" style="color:#fff;">admin</a>
+  </div>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

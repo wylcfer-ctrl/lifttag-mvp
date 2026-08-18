@@ -163,6 +163,113 @@ called out rather than silently decided)
 CHAIN-001). **The original five URLs are completely unchanged** — see
 `tests/test_seed.py::test_original_five_fixed_urls_are_unchanged`.
 
+## Rolling 24h Pre-Use Validity, Standard Checklist, Continuous Scanning, and DEMO Roles (added 2026-08-18)
+
+This round implemented, on top of the unchanged 93-test baseline, without any destructive
+migration and without touching the approved Correction 1 state table:
+
+### 1. Standard 5-point pre-use checklist, everywhere
+
+The checklist already used by the session flow is now also mandatory on the **standalone**
+`/t/<tag_id>/check` route:
+
+- Visual condition acceptable
+- Identification / tag legible
+- No obvious damage or deformation
+- No unacceptable wear
+- Components / connections appear serviceable
+
+A FAIL requires a failure/defect reason in both flows. Both call the exact same
+`workflow.record_pre_use_check()` — there is no duplicated PASS/FAIL/quarantine logic anywhere.
+
+### 2. Rolling 24-hour pre-use validity — derived, not stored
+
+`workflow.get_operational_state(conn, asset)` computes one of three states on every read:
+`VALID CHECK`, `CHECK REQUIRED`, or `QUARANTINED` (quarantine always dominates). **No
+`checks.valid_until` column was added** — per explicit instruction, the value is derived fresh
+from `checks.timestamp + timedelta(hours=24)` every time, so there is no separate stored value
+that could ever drift from the real check history. This is a pure rolling window — it has nothing
+to do with calendar days or midnight.
+
+`PASS`/`FAIL` remain the only two values ever written to `checks.result`. `VALID CHECK` /
+`CHECK REQUIRED` / `QUARANTINED` are never stored anywhere — they are display-only, derived state.
+
+**Session-scoped validity is deliberately different from standalone validity** — this was an
+explicit correction during this round's requirements-gathering:
+
+- **Standalone** (`/t/<tag_id>`, `/t/<tag_id>/check`): shows `VALID CHECK` if the asset's most
+  recent real PASS (from *any* context — standalone or a session) is still within its rolling 24h
+  window. The user is never blocked from performing a new check anyway if they choose to.
+- **Inside an Inspection Session**: a **new** session always requires its own real pre-use check
+  for each asset added, regardless of any standalone or other-session PASS, however recent. This
+  needed **zero changes** to `add_asset_to_session()` — it already unconditionally created a
+  `PENDING` item for a genuinely new (session, asset) pair. The **same** session recognising its
+  own already-completed check is likewise handled entirely by the pre-existing duplicate-add guard
+  (re-adding an asset already active in this session returns the existing item, PASS/FAIL intact,
+  untouched) — also unchanged code.
+
+See `tests/test_validity.py` and `tests/test_session_validity.py`.
+
+### 3. Continuous scanning, standalone and same-screen in sessions
+
+- **Standalone**: `check_result.html` now offers `SCAN NEXT TAG`, linking to the Test Harness
+  index (`/`) — this demo's existing stand-in for a physical NFC tap, since no real hardware
+  exists yet (see `templates/index.html`'s own pre-existing note). No new route was needed. Every
+  check remains an independent record; there is no artificial maximum (tested to all seven demo
+  assets in one run).
+- **Inspection Sessions**: `session_add.html` (the existing scan/add picker) now also shows the
+  current working list on the same screen, so a field user never has to bounce back to
+  `session_detail` to see what's already been added or to start a check on an item just added.
+  `session_add_tap` already redirected back to itself (not to `/`) before this round — that part
+  of the "no forced navigation" requirement was already satisfied; this round added the visible
+  list. See `tests/test_session_validity.py::SameScreenContinuousScanningTestCase`.
+
+### 4. DEMO ONLY AP / Supervisor / Field User role architecture
+
+**DEMO ACCESS — NOT AUTHENTICATED.** No password, no login, no verified identity anywhere in this
+system. This exists only to demonstrate a real permission *architecture* — a real registry, real
+route-level enforcement, a real audit trail — rather than the explicitly-forbidden approach of
+free-text "enter your name and role" with nothing behind it.
+
+- New `demo_users` table (name, role, granted_by, revoked_at) and `demo_auth_events` table
+  (append-only, same convention as `audit_events`/`session_events`) — both brand new tables, no
+  column added to any pre-existing table for this feature.
+- A single bootstrap **AP** identity (`"Demo AP"`) is seeded idempotently on every startup
+  (`seed_data.seed_demo_users`), so the grant workflow can be demonstrated from a fresh database.
+- `/demo/act-as` lets the current browser session "act as" any *currently registered* AP/Supervisor
+  identity (never free text) or as an unregistered Field User (no selection). Stored in a signed
+  Flask session cookie — resets on process restart, same as every other free-tier ephemeral state.
+- Only **AP** may grant/revoke Supervisor access (`workflow.grant_supervisor`/`revoke_supervisor`,
+  both defensively re-checking the caller's role even though the route already does too).
+- **Pre-use checking itself remains completely open to anyone**, standalone or in a session,
+  unchanged from the original MVP — per explicit instruction ("pre-use checking is NOT exclusive
+  to the AP"). Only `/admin/*` routes (Asset Registry, NFC commissioning/replace, CSV import,
+  user grant/revoke) are gated: AP or Supervisor for most; AP-only for `/admin/users`.
+- A Supervisor can perform **both** first-time NFC commissioning and tag replacement on an
+  existing asset — every pre-existing safety guard (never silently overwrite, never create a
+  second asset, never release quarantine, full history preserved) was already structurally
+  enforced by `workflow.commission_tag()`/`replace_tag()` and required **no changes** — only the
+  route-level *who may reach it* changed.
+
+See `tests/test_permissions.py` and `tests/test_nfc_commissioning_permissions.py`.
+
+### Explicit deviations / scope notes for this round
+
+- No `valid_until` column was added (see §2) — an explicit instruction, followed exactly.
+- The Demo Role architecture is **not** real authentication and must never be treated as one —
+  every page it appears on says so. Real authentication (passwords/OAuth/SSO/sessions resistant to
+  impersonation) is explicitly out of scope and would be a separate, later, controlled phase.
+- Periodic inspection expiry: `get_operational_state()` surfaces `asset.periodic_inspection_status
+  != VALID` as a blocking note (reusing the pre-existing static field), but no automatic
+  time-based periodic-inspection expiry engine was built — per explicit instruction not to build
+  one this round.
+- 15 pre-existing tests required updates (adding checklist fields to POST data, or acting as the
+  bootstrap AP before hitting now-gated `/admin/*` routes in test setup) — these are the
+  "intentional behaviour change" exception: the underlying assertions were never weakened, only
+  the request data needed to reach the *same* code path that used to be reachable without it. See
+  git-blame-equivalent comments left directly in `tests/test_routes.py` and
+  `tests/test_asset_registry.py` explaining exactly why each change was needed.
+
 ## Asset Registry / Tag Commissioning (added 2026-08-17)
 
 Real lifting accessories already exist in a company equipment register **before** any LiftTag NFC
@@ -374,10 +481,41 @@ Test files:
   every mutation both at the route level and directly at the workflow level; session-level and
   asset-level audit events being recorded and rendered; and that the original single-asset route and
   startup seeding (now covering all demo assets) are unaffected.
+- `tests/test_asset_registry.py` — Asset Registry / Tag Commissioning (added 2026-08-17): permanent
+  Asset identity, registry search, commissioning/replacement guards, CSV import.
+- `tests/test_validity.py` — **added 2026-08-18**: direct unit tests of
+  `workflow.get_operational_state()` (no check ever / real PASS starts validity / exact
+  time-based-not-calendar-day expiry / expires after 24h / newer FAIL overrides an earlier valid
+  PASS / quarantine dominates), plus the standalone HTTP flow (mandatory checklist, mandatory
+  failure reason, VALID CHECK display, and that a valid check never blocks a deliberate new one).
+- `tests/test_session_validity.py` — **added 2026-08-18**: the corrected new-session-vs-same-session
+  rules (a previous standalone or other-session PASS does not satisfy a new session; a fresh PASS
+  inside a session immediately becomes the asset's new standalone validity too; merely adding an
+  asset never creates a fake check; the same session recognises its own already-completed check on
+  re-add), plus the same-screen continuous scanning UX (working list visible on the add/scan
+  screen; the same session persists across many consecutive adds with no artificial limit; the
+  add-tap route never redirects to Home).
+- `tests/test_continuous_checking.py` — **added 2026-08-18**: standalone SCAN NEXT TAG — offered on
+  every check result; leads to a page that can reach another asset; consecutive checks on different
+  assets stay fully independent (own checker, own result, own audit trail); no artificial maximum
+  (tested across all seven demo assets in one run).
+- `tests/test_permissions.py` — **added 2026-08-18**: the DEMO ONLY AP/Supervisor role
+  architecture — AP may grant/revoke Supervisor, Supervisor cannot grant or revoke, double-grant
+  and revoke-with-no-grant are rejected, every grant/revoke is auditable, `/admin/*` routes are
+  gated correctly for AP/Supervisor/unregistered Field User, pre-use checking remains completely
+  open regardless of role, the act-as picker rejects any name that isn't a currently-registered
+  identity (proving free-text role claims are impossible), and every role-boundary page is
+  labelled DEMO / NOT AUTHENTICATED.
+- `tests/test_nfc_commissioning_permissions.py` — **added 2026-08-18**: a Supervisor can perform
+  both first-time commissioning and replacement on an existing asset via the gated routes, with
+  every pre-existing safety guard intact (no duplicate asset, no silent overwrite, asset identity
+  and full check/audit history preserved, quarantine never released) and a Field User still
+  rejected from every NFC/admin route.
 
-**Verified in this environment:** all 93 tests pass (`Ran 93 tests ... OK`) — the original 66 plus
-27 added for the Asset Registry / Tag Commissioning increment (see `tests/test_asset_registry.py`
-above). The full session
+**Verified in this environment:** all 149 tests pass (`Ran 149 tests ... OK`) — the original 93
+(66 + 27 for Asset Registry) plus 56 added 2026-08-18 for rolling 24h validity, the standard
+checklist everywhere, continuous scanning, and the DEMO AP/Supervisor/Field User role architecture.
+The full session
 workflow was also smoke-tested by actually running the dev server and curling it end-to-end: created
 a session → added BIN-001/SHACKLE-001/SHACKLE-002 → PASSed BIN-001 → FAILed SHACKLE-001 with a
 reason (asset quarantined, session went BLOCKED, "1 ITEM REQUIRES ATTENTION") → attempted COMPLETE

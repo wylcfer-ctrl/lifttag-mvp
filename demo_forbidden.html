@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not Authorized (Demo) — LiftTag MVP{% endblock %}
+{% block content %}
+<p class="link"><a href="{{ url_for('index') }}">&larr; Test Harness</a></p>
+<h1>Not Authorized — DEMO ONLY</h1>
+<div class="alert alert-danger">{{ message }}</div>
+<p class="note">This is a DEMO permission boundary, not real authentication. See
+<a href="{{ url_for('demo_act_as') }}">Act As (DEMO)</a> to switch the current demo identity.</p>
+{% endblock %}

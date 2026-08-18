@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Audit History — {{ asset.asset_id }}{% endblock %}
+{% block content %}
+<h1>Audit History — {{ asset.asset_id }}</h1>
+<p class="note">Append-only record. Nothing shown here can be edited or deleted from this
+application (see README.md for what that does and does not guarantee at MVP stage).</p>
+
+<table class="audit-table">
+  <thead>
+    <tr><th>Time (UTC)</th><th>Event</th><th>Actor</th><th>Previous</th><th>New</th><th>Ref</th></tr>
+  </thead>
+  <tbody>
+  {% for e in events %}
+    <tr>
+      <td>{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td>{{ e.event_type }}</td>
+      <td>{{ e.actor }}</td>
+      <td>{{ e.previous_state or '' }}</td>
+      <td>{{ e.new_state or '' }}</td>
+      <td>{{ e.reference or '' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No audit events recorded yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

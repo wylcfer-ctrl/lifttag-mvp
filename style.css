@@ -1,0 +1,99 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f4f4f4;
+  color: #1f2933;
+}
+.banner {
+  background: #b45309;
+  color: #fff;
+  text-align: center;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.container {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+}
+h1 { font-size: 1.4rem; margin-top: 8px; }
+.alert {
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-weight: 700;
+}
+.alert-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.alert-ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.note {
+  font-size: 0.88rem;
+  color: #444;
+  background: #fff;
+  padding: 10px 12px;
+  border-left: 3px solid #999;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.button {
+  display: inline-block;
+  background: #1d4ed8;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 6px;
+  text-decoration: none;
+  margin: 8px 8px 8px 0;
+  font-weight: 600;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.link { display: inline-block; margin: 8px 8px 8px 0; color: #1d4ed8; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+form label { display: block; margin: 12px 0 4px; font-weight: 600; }
+form input[type=text] {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+fieldset { border: 1px solid #ccc; border-radius: 4px; margin: 14px 0; padding: 10px 12px; }
+label.radio { display: inline-block; font-weight: 500; margin-right: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 8px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+.status-quarantined { color: #991b1b; font-weight: 700; }
+.status-inservice { color: #166534; font-weight: 700; }
+dl.asset-details dt { font-weight: 600; margin-top: 10px; font-size: 0.85rem; color: #555; }
+dl.asset-details dd { margin: 2px 0 0; font-size: 1rem; }
+
+/* --- Inspection Session v1 (added 2026-08-17) --------------------------- */
+.session-status-open { background: #e0e7ff; color: #3730a3; border: 1px solid #a5b4fc; }
+.session-status-ready { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.session-status-blocked { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.session-status-completed { background: #e5e7eb; color: #374151; border: 1px solid #d1d5db; }
+td.session-status-open, td.session-status-ready, td.session-status-blocked, td.session-status-completed {
+  font-weight: 700; border-radius: 0; padding: 6px 8px;
+}
+ul.session-item-list { list-style: none; margin: 8px 0; padding: 0; }
+.session-item {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+.session-item-flagged { border-color: #fca5a5; }
+.session-item-removed { opacity: 0.65; }
+.session-item-head { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+.session-item-status { font-size: 0.9rem; }
+.session-item-actions { margin-top: 8px; }
+.session-remove-button {
+  background: none; border: none; padding: 0; font-size: 0.9rem; cursor: pointer;
+}
+.check-badge { font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+.check-badge-pending { background: #f3f4f6; color: #4b5563; }
+.check-badge-pass { background: #dcfce7; color: #166534; }
+.check-badge-fail { background: #fee2e2; color: #991b1b; }
+button[disabled] { background: #9ca3af; cursor: not-allowed; }

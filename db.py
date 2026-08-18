@@ -18,6 +18,7 @@ from models import (
     AuditEvent,
     InspectionSession,
     SessionItem,
+    DemoUser,
     iso,
     parse_iso,
     now,
@@ -111,6 +112,44 @@ CREATE TABLE IF NOT EXISTS session_events (
     actor TEXT NOT NULL,
     previous_status TEXT,
     new_status TEXT,
+    timestamp TEXT NOT NULL,
+    reference TEXT
+);
+
+-- --- Rolling 24h Validity + Demo Role Architecture (added 2026-08-18) ------
+-- New tables only. No column was added to any table above for the 24-hour
+-- validity feature — it is DERIVED from checks.timestamp on every read (see
+-- workflow.get_operational_state()), per explicit instruction: "Do NOT
+-- automatically add checks.valid_until merely because it was proposed
+-- during Phase 2 ... prefer deriving." No stored value would ever be
+-- inconsistent with the real check history, and no migration was needed
+-- for it at all.
+
+-- DEMO ONLY — see models.DemoUser. Not a real user/authentication table:
+-- no password hash, no login mechanism. Exists only so AP-grants-Supervisor
+-- can be demoed as a real, auditable registry rather than unchecked free
+-- text (see the explicit instruction against free-text "enter your name
+-- and role").
+CREATE TABLE IF NOT EXISTS demo_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL,
+    granted_by TEXT,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+
+-- Append-only, same convention as audit_events/session_events: no
+-- UPDATE/DELETE anywhere in this module. Holds AP grant/revoke events and
+-- other demo-role-related events, which (like session_events) have no
+-- single asset_id to attach to in audit_events.
+CREATE TABLE IF NOT EXISTS demo_auth_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    target_name TEXT,
+    previous_role TEXT,
+    new_role TEXT,
     timestamp TEXT NOT NULL,
     reference TEXT
 );
@@ -576,4 +615,76 @@ def list_session_events(conn, session_id):
         "SELECT * FROM session_events WHERE session_id = ? ORDER BY timestamp ASC, id ASC",
         (session_id,),
     ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Demo Role Architecture (added 2026-08-18) ------------------------------
+# DEMO ONLY — see models.DemoUser docstring. Not real authentication.
+
+def _demo_user(row):
+    if row is None:
+        return None
+    return DemoUser(
+        id=row["id"],
+        name=row["name"],
+        role=row["role"],
+        granted_by=row["granted_by"],
+        created_at=parse_iso(row["created_at"]),
+        revoked_at=parse_iso(row["revoked_at"]),
+    )
+
+
+def create_demo_user(conn, name, role, granted_by=None):
+    cur = conn.execute(
+        "INSERT INTO demo_users (name, role, granted_by, created_at, revoked_at) "
+        "VALUES (?, ?, ?, ?, NULL)",
+        (name, role, granted_by, iso(now())),
+    )
+    return cur.lastrowid
+
+
+def get_demo_user(conn, user_id):
+    row = conn.execute("SELECT * FROM demo_users WHERE id = ?", (user_id,)).fetchone()
+    return _demo_user(row)
+
+
+def get_demo_user_by_name(conn, name):
+    row = conn.execute("SELECT * FROM demo_users WHERE name = ?", (name,)).fetchone()
+    return _demo_user(row)
+
+
+def get_active_demo_user_by_name(conn, name):
+    row = conn.execute(
+        "SELECT * FROM demo_users WHERE name = ? AND revoked_at IS NULL", (name,)
+    ).fetchone()
+    return _demo_user(row)
+
+
+def list_active_demo_users(conn):
+    rows = conn.execute(
+        "SELECT * FROM demo_users WHERE revoked_at IS NULL ORDER BY role, name"
+    ).fetchall()
+    return [_demo_user(r) for r in rows]
+
+
+def list_all_demo_users(conn):
+    rows = conn.execute("SELECT * FROM demo_users ORDER BY role, name").fetchall()
+    return [_demo_user(r) for r in rows]
+
+
+def revoke_demo_user(conn, user_id):
+    conn.execute("UPDATE demo_users SET revoked_at = ? WHERE id = ?", (iso(now()), user_id))
+
+
+def insert_demo_auth_event(conn, event_type, actor, target_name=None, previous_role=None,
+                            new_role=None, reference=None):
+    conn.execute(
+        "INSERT INTO demo_auth_events (event_type, actor, target_name, previous_role, "
+        "new_role, timestamp, reference) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event_type, actor, target_name, previous_role, new_role, iso(now()), reference),
+    )
+
+
+def list_demo_auth_events(conn):
+    rows = conn.execute("SELECT * FROM demo_auth_events ORDER BY timestamp ASC, id ASC").fetchall()
     return [dict(r) for r in rows]
